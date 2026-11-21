@@ -1,0 +1,39 @@
+{
+  "mode": "benchmark",
+  "task_name": "my_spoon_task",
+  "model": {
+    "config_name": "my_wallx_config",
+    "deploy": "lan",
+    "model_address": "wss://maas-api.x2robot.com/v1/vla/wallx",
+    "robot_type": "DESKTOP",
+    "mode_type": "EndPose",
+    "infer_type": "sync",
+    "infer_params": {
+      "action_horizon": 32,
+      "control_dt": 0.005,
+      "interpolate_multiplier": 8,
+      "async_params": {
+        "api_schema": "public_v2",
+        "embodiment": "quanta_x1_pro/gripper-g",
+        "normalization": "provided",
+        "control_context": "masked"
+      }
+    }
+  },
+  "data": [
+    {
+      "case_id": 1,
+      "instruction": "Pick up the spoon and place it in the bowl.",
+      "image_path": "",
+      "env_description": {
+        "spoon": "on the table to the left of the bowl",
+        "bowl": "near the center of the workspace"
+      },
+      "scores_dict": {
+        "Grasp the spoon": 3,
+        "Place and release the spoon inside the bowl": 7
+      },
+      "timeout": 120
+    }
+  ]
+}
