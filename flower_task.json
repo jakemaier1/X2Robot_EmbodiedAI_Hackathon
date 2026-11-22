@@ -1,12 +1,20 @@
 {
+  "colors": ["blue", "white"],
+  "max_actions": 4,
+  "retries_per_action": 1,
+
   "steps": [
-    {"state": "GRAB_BOTTLE",  "requests": 10, "instruction": "Grab the blue flower and hold it directly above the yellow bottle with several inches of clearance."},
-    {"state": "GRAB_FLOWER",  "requests": 10, "instruction": "SUPER Slowly lower the bottom of the blue flower stem into the bottle mouth."}
+    {"state": "GRAB_FLOWER", "requests": 10, "instruction": "Grab the {color} flower and hold it directly above the yellow bottle with several inches of clearance."},
+    {"state": "INSERT_STEM", "requests": 10, "instruction": "SUPER Slowly lower the bottom of the {color} flower stem into the bottle mouth."}
   ],
 
   "done_instruction": "Return both arms to the home position.",
 
-  "flowers_left_question": "Is any blue flower still on the table, outside the bottle? Answer with JSON: {\"blue_flowers_left\": bool}",
+  "planner_system_prompt": "You plan the work of a two-arm robot at a table. The robot has one action: pick up one artificial flower of a given color and put it stem-down into the vase, a heavy mug about 10 cm tall. The flowers are blue roses and white peonies, so 'rose' means blue and 'peony' means white.\n\nYou get the operator's instruction and three camera images: front, left_wrist and right_wrist. In the front image the robot's right arm appears on the left side and its left arm on the right side.\n\nReturn one action per flower that should end up in the vase, in the order the robot should do them:\n- If the instruction gives a number ('both', 'one', 'two'), use it.\n- If it gives none ('all the flowers', 'the blue flowers'), count the matching flowers lying on the table outside the vase.\n- Plan nothing for flowers the instruction says to leave alone, flowers already in the vase, or things that are not flowers (a green leaf sprig with no flower head is not a flower).\n- When flowers overlap, start with the one on top.\n- If the instruction asks for nothing these actions can do, return an empty list.",
 
-  "system_prompt": "You check a robot manipulation scene from three cameras: front, left_wrist and right_wrist. In the front image the robot's right arm appears on the left side and its left arm on the right side. Only blue flowers count; flowers already in the bottle do not count, and neither do flowers of other colors. Answer with exactly one JSON object and nothing else."
+  "planner_question": "Operator instruction: {instruction}",
+
+  "check_system_prompt": "You check a robot manipulation scene from three cameras: front, left_wrist and right_wrist. In the front image the robot's right arm appears on the left side and its left arm on the right side. The vase is a heavy mug about 10 cm tall. The flowers are blue roses and white peonies.",
+
+  "check_question": "For each color, count the flowers whose stem is inside the vase right now, including one a gripper is still holding there. Do not count flowers lying on the table, held in the air, or in any other cup."
 }
