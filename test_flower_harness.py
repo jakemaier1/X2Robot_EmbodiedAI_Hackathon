@@ -426,6 +426,8 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(vision.planned, [GOAL, "Another case.", GOAL])
         self.assertEqual([r["client_goal"] for r in logs if r["event"] == "session_start"],
                          [GOAL, "Another case.", GOAL])
+        closed = [r for r in logs if r["event"] == "client_closed"]
+        self.assertEqual([(r["requests"], r["code"]) for r in closed], [(1, 1000), (1, 1000)])
 
     async def test_closes_and_signals_exit_after_the_done_chunks(self):
         logs = []

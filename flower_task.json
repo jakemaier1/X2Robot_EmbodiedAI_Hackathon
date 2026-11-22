@@ -4,7 +4,7 @@
   "retries_per_action": 1,
 
   "steps": [
-    {"state": "GRAB_FLOWER", "requests": 5, "instruction": "pick up the {color} flower and hold it vertically"},
+    {"state": "GRAB_FLOWER", "requests": 7, "instruction": "pick up the {color} flower and hold it vertically"},
     {"state": "INSERT_STEM", "requests": 10, "instruction": "put the {color} flower into the black cup stem down"}
   ],
 

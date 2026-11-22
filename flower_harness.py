@@ -401,6 +401,10 @@ class FlowerRelay:
                         await downstream.close(code=1000, reason="Task done")
                         self.finished.set()
                         return
+                # The client closed normally (the loop above ends without an exception).
+                self.log({"event": "client_closed", "requests": index,
+                          "code": downstream.close_code, "reason": (downstream.close_reason or "")[:200],
+                          "message": "The robot client ended the session."})
         except ConnectionClosed:
             self.log({"event": "closed", "message": "Connection closed; end/confirm the session in WebUI."})
         except Exception as error:
