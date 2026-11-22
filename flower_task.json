@@ -5,10 +5,11 @@
 
   "steps": [
     {"state": "GRAB_FLOWER", "requests": 10, "instruction": "Grab the {color} flower and hold it directly above the yellow bottle with several inches of clearance."},
-    {"state": "INSERT_STEM", "requests": 10, "instruction": "SUPER Slowly lower the bottom of the {color} flower stem into the bottle mouth."}
+    {"state": "INSERT_STEM", "requests": 5, "instruction": "SUPER Slowly lower the bottom of the {color} flower stem into the bottle mouth."}
   ],
 
   "done_instruction": "Return both arms to the home position.",
+  "done_requests": 3,
 
   "planner_system_prompt": "You plan the work of a two-arm robot at a table. The robot has one action: pick up one artificial flower of a given color and put it stem-down into the vase, a heavy mug about 10 cm tall. The flowers are blue roses and white peonies, so 'rose' means blue and 'peony' means white.\n\nYou get the operator's instruction and three camera images: front, left_wrist and right_wrist. In the front image the robot's right arm appears on the left side and its left arm on the right side.\n\nReturn one action per flower that should end up in the vase, in the order the robot should do them:\n- If the instruction gives a number ('both', 'one', 'two'), use it.\n- If it gives none ('all the flowers', 'the blue flowers'), count the matching flowers lying on the table outside the vase.\n- Plan nothing for flowers the instruction says to leave alone, flowers already in the vase, or things that are not flowers (a green leaf sprig with no flower head is not a flower).\n- When flowers overlap, start with the one on top.\n- If the instruction asks for nothing these actions can do, return an empty list.",
 

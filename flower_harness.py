@@ -37,7 +37,8 @@ Decisions (1-3 are tunable in flower_task.json)
      flowers per color in the vase. No increase for the action's color -> the
      action goes back on the front of the queue (retries_per_action times).
      A failed check counts as success.
-  4. DONE keeps forwarding done_instruction; the WebUI ends the session.
+  4. DONE forwards done_instruction for done_requests chunks (3), then the
+     relay closes the client connection and the process exits.
   5. A new client connection, or a change of the client's instruction string,
      starts a fresh plan and machine. The client's own instruction is never
      forwarded.
@@ -155,6 +156,23 @@ def error_fields(error):
     return record
 
 
+def gripper_fields(observation, response):
+    """Observed gripper per arm, and the min/max gripper WALLX commands for the next
+    chunk, for calibrating release detection. Logging only: never raises."""
+    fields = {}
+    try:
+        state = observation["observation"]["state"]
+        fields["gripper"] = {arm: round(float(state[f"{arm}_ee"]["gripper"]), 3)
+                             for arm in ("left", "right")}
+        actions = unpack(response)["actions"]
+        fields["gripper_cmd"] = {arm: [round(float(min(g)), 3), round(float(max(g)), 3)]
+                                 for arm in ("left", "right")
+                                 for g in [list(actions[f"{arm}_ee"]["gripper"])]}
+    except Exception:
+        pass
+    return fields
+
+
 # ---- Claude: planner and vase checker ------------------------------------------
 
 def image_blocks(images):
@@ -238,6 +256,7 @@ class FlowerRelay:
         self.vision = vision
         self.timeout = timeout
         self.log = log
+        self.finished = asyncio.Event()  # set after a session's last DONE chunk; main() exits
 
     async def make_plan(self, observation, goal):
         """Blocking: the held client request waits. Claude, one retry, then keywords."""
@@ -324,8 +343,14 @@ class FlowerRelay:
                     response = await asyncio.wait_for(upstream.recv(), self.timeout)
                     await asyncio.wait_for(downstream.send(response), self.timeout)
                     self.log({"event": "chunk", "index": index, "state": machine.state,
-                              "ms": elapsed_ms(started)})
+                              "ms": elapsed_ms(started), **gripper_fields(observation, response)})
                     index += 1
+                    if machine.finished:
+                        self.log({"event": "finished", "index": index,
+                                  "message": "Task done; closing. Confirm the session is stopped in WebUI."})
+                        await downstream.close(code=1000, reason="Task done")
+                        self.finished.set()
+                        return
         except ConnectionClosed:
             self.log({"event": "closed", "message": "Connection closed; end/confirm the session in WebUI."})
         except Exception as error:
@@ -379,7 +404,9 @@ async def main():
         # Names only, never values.
         print(f"WALLX upstream: {wallx_url.split('?')[0]}; "
               f"headers sent: {sorted(headers) or 'none'}", flush=True)
-        await asyncio.Future()
+        await relay.finished.wait()
+        print("Task done after the DONE chunks; harness exiting. "
+              "Confirm the robot session is stopped in WebUI.", flush=True)
 
 
 if __name__ == "__main__":

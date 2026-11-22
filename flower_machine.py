@@ -12,15 +12,16 @@ After an action, if a check could change what happens next, the relay asks the
 vision model how many flowers of each color stand in the vase. If the count for
 the action's color did not go up, the action goes back on the front of the
 queue (at most retries_per_action times). A failed or unusable check counts as
-success. Empty queue -> DONE: forward the home instruction until the WebUI
-ends the session. States, wording, lengths and prompts are data in
-flower_task.json.
+success. Empty queue -> DONE: forward the home instruction for done_requests
+requests, then `finished` is True and the relay closes the session and exits.
+States, wording, lengths and prompts are data in flower_task.json.
 
 Driving protocol, once per client request:
     machine = Machine(config, plan)       # plan: validate_plan(...) or fallback_plan(...)
     if machine.awaiting_check:
         machine.on_vase_counts(counts)    # {color: int}, or None if the call failed
     observation["instruction"] = machine.next_instruction()
+    ... forward it; then if machine.finished: close the session
 """
 
 from collections import deque
@@ -52,6 +53,7 @@ class TaskConfig:
     retries_per_action: int
     steps: tuple
     done_instruction: str
+    done_requests: int  # home chunks to forward before the relay exits
     planner_system_prompt: str
     planner_question: str  # must contain {instruction}
     check_system_prompt: str
@@ -65,6 +67,7 @@ class TaskConfig:
             retries_per_action=data["retries_per_action"],
             steps=tuple(Step(s["state"], s["instruction"], s["requests"]) for s in data["steps"]),
             done_instruction=data["done_instruction"],
+            done_requests=data["done_requests"],
             planner_system_prompt=data["planner_system_prompt"],
             planner_question=data["planner_question"],
             check_system_prompt=data["check_system_prompt"],
@@ -82,6 +85,8 @@ class TaskConfig:
             raise ValueError("Colors, states, instructions and prompts must be non-empty strings")
         if not all(type(s.requests) is int and s.requests >= 1 for s in config.steps):
             raise ValueError("Every step's requests must be an integer >= 1")
+        if type(config.done_requests) is not int or config.done_requests < 1:
+            raise ValueError("done_requests must be an integer >= 1")
         if type(config.max_actions) is not int or config.max_actions < 1:
             raise ValueError("max_actions must be an integer >= 1")
         if type(config.retries_per_action) is not int or config.retries_per_action < 0:
@@ -102,6 +107,7 @@ class Machine:
         self.queue = deque(Action(color) for color in plan[:config.max_actions])
         self.in_vase = dict.fromkeys(config.colors, 0)  # last known count per color
         self.started = 0  # actions started, retries included
+        self.done_sent = 0  # home instructions returned
         self.action = None
         self._next_action()
 
@@ -118,6 +124,11 @@ class Machine:
     @property
     def state(self):
         return DONE if self.done else self.config.steps[self.step].state
+
+    @property
+    def finished(self):
+        """True once done_requests home instructions have gone out: end the session."""
+        return self.done and self.done_sent >= self.config.done_requests
 
     @property
     def queued(self):
@@ -171,6 +182,7 @@ class Machine:
             else:
                 self.step, self.sent = self.step + 1, 0
         if self.done:
+            self.done_sent += 1
             return self.config.done_instruction
         self.sent += 1
         return self.config.instruction(self.config.steps[self.step], self.action.color)

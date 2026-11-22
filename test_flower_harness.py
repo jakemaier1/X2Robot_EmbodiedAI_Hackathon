@@ -13,7 +13,7 @@ import unittest
 import numpy as np
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
-from websockets.exceptions import ConnectionClosedError
+from websockets.exceptions import ConnectionClosedError, ConnectionClosedOK
 
 from harness import pack, unpack
 from flower_harness import (DEFAULT_TASK, FALLBACK_BETA, ClaudeVision, FlowerRelay, image_blocks,
@@ -109,7 +109,7 @@ class MachineTests(unittest.TestCase):
                     {"steps": [step, step]},
                     {"steps": [{**step, "state": DONE}]},
                     {"steps": [{**step, "instruction": " "}]},
-                    {"done_instruction": ""},
+                    {"done_instruction": ""}, {"done_requests": 0}, {"done_requests": 1.5},
                     {"colors": []}, {"colors": ["blue", "blue"]}, {"colors": ["blue", ""]},
                     {"max_actions": 0}, {"max_actions": 2.0},
                     {"retries_per_action": -1}, {"retries_per_action": True},
@@ -132,6 +132,15 @@ class MachineTests(unittest.TestCase):
         machine = Machine(TINY, [])
         self.assertEqual(machine.state, DONE)
         self.assertEqual([machine.next_instruction() for _ in range(2)], [HOME, HOME])
+
+    def test_finished_after_done_requests_home_chunks(self):
+        self.assertEqual(CONFIG.done_requests, 3)
+        machine = Machine(NO_RETRY, ["blue"])
+        finished = []
+        for _ in range(6):
+            machine.next_instruction()
+            finished.append(machine.finished)
+        self.assertEqual(finished, [False] * 5 + [True])  # 3 action chunks, then 3 home
 
     def test_failed_placement_is_retried_once(self):
         machine = Machine(TINY, ["blue"])
@@ -322,6 +331,34 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(vision.planned, [GOAL, "Another case.", GOAL])
         self.assertEqual([r["client_goal"] for r in logs if r["event"] == "session_start"],
                          [GOAL, "Another case.", GOAL])
+
+    async def test_closes_and_signals_exit_after_the_done_chunks(self):
+        logs = []
+
+        async def wallx(ws):
+            await ws.send(METADATA)
+            async for _ in ws:
+                await ws.send(ACTION)
+
+        async with serve(wallx, "127.0.0.1", 0) as upstream:
+            relay = FlowerRelay(f"ws://127.0.0.1:{upstream.sockets[0].getsockname()[1]}", {},
+                                NO_RETRY, FakeVision([{"actions": ["blue"]}]), log=logs.append)
+            async with serve(relay.handle, "127.0.0.1", 0) as server:
+                async with connect(f"ws://127.0.0.1:{server.sockets[0].getsockname()[1]}") as client:
+                    await client.recv()
+                    for _ in range(6):  # 3 action chunks + 3 DONE chunks
+                        self.assertFalse(relay.finished.is_set())
+                        await client.send(pack(observation()))
+                        self.assertEqual(await asyncio.wait_for(client.recv(), 5), ACTION)
+                    with self.assertRaises(ConnectionClosedOK) as caught:
+                        await asyncio.wait_for(client.recv(), 2)
+                    self.assertEqual(caught.exception.rcvd.code, 1000)
+        self.assertTrue(relay.finished.is_set())
+        self.assertEqual(logs[-1]["event"], "finished")
+        chunks = [r for r in logs if r["event"] == "chunk"]
+        self.assertEqual([c["state"] for c in chunks], ["GRAB_FLOWER"] * 2 + ["INSERT_STEM"] + [DONE] * 3)
+        self.assertEqual((chunks[0]["gripper"], chunks[0]["gripper_cmd"]),
+                         ({"left": 0.5, "right": 0.5}, {"left": [0.0, 0.0], "right": [0.0, 0.0]}))
 
     async def test_wrong_embodiment_closes_with_diagnostics(self):
         logs = []
