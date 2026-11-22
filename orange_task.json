@@ -3,8 +3,8 @@
 
   "templates": {
     "grab_instruction": "Pick up the {item}.",
-    "drop_instruction": "Put the {item} in the basket.",
     "grab_question": "Is the {item} held in a gripper, lifted off the table? Answer with JSON: {\"holding\": bool, \"is_target\": bool}",
+    "drop_instruction": "Put the {item} in the basket.",
     "drop_question": "Is the {item} inside the basket and both grippers empty? Answer with JSON: {\"in_basket\": bool, \"gripper_empty\": bool}"
   },
 
