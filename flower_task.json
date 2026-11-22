@@ -1,0 +1,14 @@
+{
+  "steps": [
+    {"state": "GRAB_BOTTLE",  "requests": 10, "instruction": "Grab the yellow and red bottle and hold it in place"},
+    {"state": "GRAB_FLOWER",  "requests": 10, "instruction": "While holding the bottle in place, grab a blue flower by its stem, right below the flower petals."},
+    {"state": "INSERT_STEM",  "requests": 10, "instruction": "While holding the bottle in place, insert the end of the flower stem into the top of the bottle."},
+    {"state": "PLACE_BOTTLE", "requests": 10, "instruction": "While holding the bottle in place, lower the flower stem into the bottle."}
+  ],
+
+  "done_instruction": "Return both arms to the home position.",
+
+  "flowers_left_question": "Is any blue flower still on the table, outside the bottle? Answer with JSON: {\"blue_flowers_left\": bool}",
+
+  "system_prompt": "You check a robot manipulation scene from three cameras: front, left_wrist and right_wrist. In the front image the robot's right arm appears on the left side and its left arm on the right side. Only blue flowers count; flowers already in the bottle do not count, and neither do flowers of other colors. Answer with exactly one JSON object and nothing else."
+}

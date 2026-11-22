@@ -14,7 +14,7 @@
       "interpolate_multiplier": 8,
       "async_params": {
         "api_schema": "public_v2",
-        "embodiment": "quanta_x1_pro/gripper-g",
+        "embodiment": "teletwin_desktop/gripper-g",
         "normalization": "provided",
         "control_context": "masked"
       }

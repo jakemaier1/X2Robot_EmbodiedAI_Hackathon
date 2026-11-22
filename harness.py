@@ -23,7 +23,7 @@ from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
 
-WALLX_URL = os.environ.get("WALLX_ENDPOINT", "wss://maas-api.x2robot.com/v1/vla/wallx")
+WALLX_URL = os.environ.get("WALLX_ENDPOINT", "wss://192.168.1.10:33677")
 MAX_FRAME_BYTES = 32 * 1024 * 1024
 
 

@@ -1,0 +1,23 @@
+{
+  "items": ["carrot", "carton", "tangerine"],
+
+  "templates": {
+    "grab_instruction": "Pick up the {item}.",
+    "grab_question": "Is the {item} held in a gripper, lifted off the table? Answer with JSON: {\"holding\": bool, \"is_target\": bool}",
+    "drop_instruction": "Put the {item} in the basket.",
+    "drop_question": "Is the {item} inside the basket and both grippers empty? Answer with JSON: {\"in_basket\": bool, \"gripper_empty\": bool}"
+  },
+
+  "grab_pass": ["holding", "is_target"],
+  "drop_pass": ["in_basket", "gripper_empty"],
+
+  "done_instruction": "Return both arms to the home position.",
+
+  "system_prompt": "You check the progress of a robot manipulation task from three cameras: front, left_wrist and right_wrist. In the front image the robot's right arm appears on the left side and its left arm on the right side. Only the named item counts; ignore other objects. Answer with exactly one JSON object and nothing else.",
+
+  "max_attempts": 3,
+  "retry_max_attempts": 1,
+  "time_budget_s": 420,
+  "verify_after": 8,
+  "reverify_every": 4
+}
