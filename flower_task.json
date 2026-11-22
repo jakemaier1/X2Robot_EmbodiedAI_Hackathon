@@ -1,7 +1,7 @@
 {
   "steps": [
-    {"state": "GRAB_BOTTLE",  "requests": 10, "instruction": "Grab the blue flower and hold it directly above the yellow bottle"},
-    {"state": "GRAB_FLOWER",  "requests": 10, "instruction": "Slowly lower the bottom of the blue flower stem into the bottle mouth."}
+    {"state": "GRAB_BOTTLE",  "requests": 10, "instruction": "Grab the blue flower and hold it directly above the yellow bottle with several inches of clearance."},
+    {"state": "GRAB_FLOWER",  "requests": 10, "instruction": "SUPER Slowly lower the bottom of the blue flower stem into the bottle mouth."}
   ],
 
   "done_instruction": "Return both arms to the home position.",
