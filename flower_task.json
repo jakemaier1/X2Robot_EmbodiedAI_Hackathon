@@ -1,13 +1,28 @@
 {
   "steps": [
-    {"state": "SEPARATE_FLOWERS",  "requests": 8, "instruction": "Pick and place the flowers apart on the table so that each BLUE flower lies by itself, facing away from the camera, not touching or overlapping any other flower."},
-    {"state": "LIFT_FLOWER",  "requests": 10, "instruction": "Grab ONLY the BLUE flowers and lift them directly above the mouth of the yellow bottle with SEVERAL inches of clearance between the bottom of the stem and the bottle."},
-    {"state": "LOWER_INTO_BOTTLE",  "requests": 10, "instruction": "EXTREMELY Slowly, lower the bottom of the blue flower's stem into the bottle mouth. Make SMALL, PRECISE movements."}
+    {"state": "PICK_AND_SHOW",  "requests": 8, "instruction": "Pick up the blue flower and hold it in front of the yellow bottle."},
+    {"state": "LIFT_FLOWER",  "requests": 10, "instruction": "Lift the BLUE flower you are holding very high vertically above the mouth of the yellow bottle."},
+    {"state": "LOWER_INTO_BOTTLE",  "requests": 10, "instruction": "EXTREMELY Slowly, lower the bottom of the blue flower's stem into the bottle mouth. Make SMALL, PRECISE movements."},
+    {"state": "PUT_ASIDE_FLOWER",  "requests": 6, "back": "PICK_AND_SHOW", "instruction": "Move the object you are holding to the far side of the table."}
   ],
+
+  "scenes": [
+    {"id": "ALL_BLUE_FLOWERS_IN_BOTTLE", "next": "DONE",
+     "description": "Every BLUE flower is standing in the yellow bottle with its stem INSIDE the bottle mouth. No blue flower is lying on the table, and no gripper is holding a blue flower outside the bottle."},
+    {"id": "BLUE_FLOWER_AT_BOTTLE_MOUTH", "next": "LOWER_INTO_BOTTLE",
+     "description": "A gripper is holding a BLUE flower DIRECTLY, vertically above the mouth of the yellow bottle. The bottom of the stem is above the mouth or only partly inside it."},
+    {"id": "BLUE_FLOWER_HELD", "next": "LIFT_FLOWER",
+     "description": "A gripper is holding a blue flower that is not yet above the bottle mouth, for example held up in front of the camera."},
+    {"id": "OTHER_FLOWER_HELD", "next": "PUT_ASIDE_FLOWER",
+     "description": "A gripper is holding a flower that is not blue (for example white)."},
+    {"id": "NOTHING_HELD", "next": "PICK_AND_SHOW",
+     "description": "No gripper is holding a flower, and flowers that are not in the bottle remain on the table."}
+  ],
+
+  "unclear": {"state": "OPEN_GRIPPERS", "requests": 2, "instruction": "Open both grippers and release whatever they are holding."},
+  "reclassify_every": 3,
 
   "done_instruction": "Return both arms to the home position.",
 
-  "flowers_left_question": "Are any BLUE flowers still on the table, outside the bottle? Answer with JSON: {\"blue_flowers_left\": bool}",
-
-  "system_prompt": "You check a robot manipulation scene from three cameras: front, left_wrist and right_wrist. In the front image the robot's right arm appears on the left side and its left arm on the right side. Only blue flowers count; flowers already in the bottle do not count, and neither do flowers of other colors. Answer with exactly one JSON object and nothing else."
+  "system_prompt": "You watch a robot that puts blue flowers into a yellow bottle, through one image from the front camera, which faces the robot: the robot's right arm appears on the left side of the image and its left arm on the right side. The robot picks up flowers one at a time and holds them up to the camera so you can judge their color: look closely at the petals of any flower in a gripper. Flowers already standing in the bottle are finished: ignore them when judging the other scenes. Only blue flowers are targets; flowers of other colors are just obstacles. If no scene clearly matches, answer NONE. Answer with exactly one JSON object and nothing else."
 }

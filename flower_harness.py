@@ -8,7 +8,7 @@ Protocol helpers come from the demo (harness.py); everything else is here.
 Files
   flower_harness.py        relay (this file)
   flower_machine.py        pure state machine (no I/O, no asyncio)
-  flower_task.json         flower count, states, instructions, step lengths
+  flower_task.json         states, instructions, step lengths, scene classes, prompt
   test_flower_harness.py   offline tests
 
 Settings (local_settings.py next to this file; git-ignored, see the .example)
@@ -20,20 +20,29 @@ Run
   python flower_harness.py --host YOUR_LAN_IP --port 8001 [--task PATH] [--agent-timeout S]
   For a passthrough connectivity check use the demo: python harness.py --passthrough
 
-Decisions (MVP defaults; 1-2 are tunable in flower_task.json)
+Decisions (defaults; 1-4 are tunable in flower_task.json)
   1. Each state forwards its instruction for `requests` client requests
-     (~1.3 s of motion each, measured in server_logs.txt), then moves on. No
-     verification of the actions, no retries. Lengths are untuned.
-  2. "All blue flowers": after each PLACE_BOTTLE, one blocking vision call asks
-     flowers_left_question about the images of the held request. Only
-     {"blue_flowers_left": false} ends the task. true, a failed call or an
-     unusable answer runs another cycle (the WebUI can always stop it).
-  3. DONE keeps forwarding done_instruction; the WebUI ends the session.
-  4. A new client connection, or a change of the client's instruction string,
+     (~1.3 s of motion each, measured in server_logs.txt), then one blocking
+     vision call classifies the scene (front camera of the held request only)
+     into one of `scenes`, listed in priority order (first match wins).
+  2. The machine goes to the matched scene's `next` state. If that is the
+     current state, the step keeps going and the scene is classified again
+     after reclassify_every=3 requests.
+  3. No match (NONE), an unknown id, a failed call or an unusable answer runs
+     the `unclear` step (OPEN_GRIPPERS, 2 requests), then goes back to the
+     running step's `back` step (default: the one before it; the first step
+     goes back to itself) with a full budget; the scene is not classified
+     during or right after it.
+     There is no attempt limit; the WebUI can always stop the session.
+  4. The ALL_BLUE_FLOWERS_IN_BOTTLE scene ends the task. A single flower in
+     the bottle needs no scene of its own: the prompt says to ignore flowers
+     already in the bottle, so the scene is classified by the next flower.
+  5. DONE keeps forwarding done_instruction; the WebUI ends the session.
+  6. A new client connection, or a change of the client's instruction string,
      starts a fresh machine (the demo's reset rule). The client's own
      instruction is never forwarded.
-  5. No time budget; the WebUI's case timeout ends the session.
-  6. A vision call times out after --agent-timeout=10 s (the demo's value).
+  7. No time budget; the WebUI's case timeout ends the session.
+  8. A vision call times out after --agent-timeout=10 s (the demo's value).
 """
 
 """
@@ -65,6 +74,7 @@ from flower_machine import Machine, TaskConfig
 DEFAULT_TASK = Path(__file__).with_name("flower_task.json")
 SETTINGS_FILE = Path(__file__).with_name("local_settings.py")
 CAMERAS = ("front", "left_wrist", "right_wrist")
+CLASSIFY_CAMERAS = ("front",)  # the main camera only: wrist views were slow and did not help
 EMBODIMENT = "teletwin_desktop/gripper-g"  # the only embodiment this station uses
 
 
@@ -151,9 +161,9 @@ class VisionClient:
         self.url, self.model, self.key, self.timeout = url, model, key, timeout
         self.reasoning_effort = reasoning_effort  # e.g. "minimal"; None = model default
 
-    def ask(self, images, question, system_prompt):
+    def ask(self, images, question, system_prompt, cameras=CAMERAS):
         content = [{"type": "text", "text": question}]
-        for name in CAMERAS:
+        for name in cameras:
             image = images.get(name)
             if isinstance(image, bytes):
                 image = base64.b64encode(image).decode("ascii")
@@ -185,7 +195,7 @@ class VisionClient:
 
 
 class FlowerRelay:
-    """ask(images, question, system_prompt) -> dict; may raise. Runs in a thread."""
+    """ask(images, question, system_prompt, cameras) -> dict; may raise. Runs in a thread."""
 
     def __init__(self, upstream_url, headers, config, ask, timeout=60, log=log_json):
         self.upstream_url = upstream_url
@@ -195,24 +205,29 @@ class FlowerRelay:
         self.timeout = timeout
         self.log = log
 
-    async def flowers_left(self, observation, index):
-        """Blocking: the held client request waits. True/False, or None on any failure."""
+    async def classify(self, observation, machine, index):
+        """Blocking: the held client request waits. Classifies the scene, moves the
+        machine, and logs the scene, the model's reason and the transition."""
         started = time.monotonic()
-        record = {"event": "flower_check", "index": index}
+        record = {"event": "classify", "index": index, "from": machine.state}
+        verdict = None
         try:
             verdict = await asyncio.to_thread(
-                self.ask, observation["observation"]["images"],
-                self.config.flowers_left_question, self.config.system_prompt)
-            left = verdict.get("blue_flowers_left") if isinstance(verdict, dict) else None
+                self.ask, observation["observation"]["images"], self.config.classify_question,
+                self.config.system_prompt, CLASSIFY_CAMERAS)
         except Exception as error:
             # Never log keys, images or raw bodies; HTTP status and short message are safe.
-            left, record["error"] = None, type(error).__name__
+            record["error"] = type(error).__name__
             if isinstance(error, urllib.error.HTTPError):
                 record.update(http_status=error.code, message=http_error_message(error))
-        left = left if isinstance(left, bool) else None
-        self.log({**record, "blue_flowers_left": left,
+        verdict = verdict if isinstance(verdict, dict) else {}
+        scene = verdict.get("scene") if isinstance(verdict.get("scene"), str) else None
+        if "reason" in verdict:
+            record["reason"] = str(verdict["reason"])[:200]
+        record["attempt"] = machine.classifications + 1  # classifications in this state so far
+        machine.on_scene(scene)
+        self.log({**record, "scene": scene, "to": machine.state,
                   "ms": round((time.monotonic() - started) * 1000, 1)})
-        return left
 
     async def handle(self, downstream):
         machine = goal = position = None
@@ -246,13 +261,12 @@ class FlowerRelay:
                         goal, index, position = client_goal, 0, None
                         machine = Machine(self.config)
                         self.log({"event": "session_start", "client_goal": goal})
-                    if machine.cycle_complete:
-                        machine.on_flowers_left(await self.flowers_left(observation, index))
+                    if machine.classify_due:
+                        await self.classify(observation, machine, index)
                     instruction = machine.next_instruction()
-                    if (machine.state, machine.flowers_done) != position:
-                        position = (machine.state, machine.flowers_done)
+                    if machine.state != position:
+                        position = machine.state
                         self.log({"event": "state", "index": index, "state": machine.state,
-                                  "flowers_done": machine.flowers_done,
                                   "instruction": instruction})
                     observation["instruction"] = instruction
                     await asyncio.wait_for(upstream.send(pack(observation)), self.timeout)
@@ -297,12 +311,15 @@ async def main():
         relay.handle, args.host, args.port,
         ping_interval=None, compression=None, max_size=MAX_FRAME_BYTES,
     ):
-        per_flower = sum(s.requests for s in config.steps)
         print(f"Flower harness listening at ws://{args.host}:{args.port}", flush=True)
-        print("Cycle per blue flower: "
-              + " -> ".join(f"{s.state}({s.requests})" for s in config.steps)
-              + f" = {per_flower} requests (~{per_flower * 1.3:.0f} s), then ask if any are left",
+        print(f"Start: {config.steps[0].state}. After each step's requests, classify the scene "
+              f"(same step again: re-classify every {config.reclassify_every}; "
+              f"no match: {config.unclear.state}({config.unclear.requests}) then back):",
               flush=True)
+        steps = {s.state: s.requests for s in config.steps}
+        for scene in config.scenes:
+            print(f"  {scene.id} -> {scene.next}"
+                  + (f" ({steps[scene.next]} requests)" if scene.next in steps else ""), flush=True)
         print(f"Vision model: {settings['AGENT_MODEL']} at {settings['AGENT_CHAT_URL'].split('?')[0]}; "
               f"timeout {args.agent_timeout:g} s", flush=True)
         # Names only, never values.

@@ -1,10 +1,12 @@
 """Offline tests for the flower harness. No robot, no real endpoints, no keys."""
 
 import asyncio
+import io
 import json
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 import numpy as np
 from websockets.asyncio.client import connect
@@ -12,44 +14,56 @@ from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosedError
 
 from harness import pack, unpack
-from flower_harness import DEFAULT_TASK, FlowerRelay, load_task, parse_json_object
-from flower_machine import DONE, Machine, TaskConfig
+from flower_harness import CAMERAS, CLASSIFY_CAMERAS, DEFAULT_TASK, FlowerRelay, VisionClient, load_task, parse_json_object
+from flower_machine import DONE, NONE, Machine, TaskConfig
 
 GOAL = "Put the blue flowers in the bottle."
 CONFIG = load_task(DEFAULT_TASK)  # the real file; only checked to load, so tuning it never breaks tests
-# A fixed test task: the first step lasts 2 requests, every other step 1.
+# A fixed test task: FIRST lasts 2 requests, the others 1; re-classify every 2;
+# no match -> OPEN (1 request), then back one step.
 TINY = TaskConfig.from_dict({
     "steps": [{"state": state, "instruction": f"Do {state.lower()}.", "requests": 2 if i == 0 else 1}
-              for i, state in enumerate(["FIRST", "SECOND", "THIRD", "LAST"])],
+              for i, state in enumerate(["FIRST", "SECOND", "THIRD"])],
+    "scenes": [{"id": "S_END", "description": "Finished.", "next": DONE},
+               {"id": "S_3", "description": "Needs third.", "next": "THIRD"},
+               {"id": "S_2", "description": "Needs second.", "next": "SECOND"},
+               {"id": "S_1", "description": "Needs first.", "next": "FIRST"}],
+    "unclear": {"state": "OPEN", "instruction": "Open.", "requests": 1},
+    "reclassify_every": 2,
     "done_instruction": "Go home.",
-    "flowers_left_question": 'Any blue flowers left? {"blue_flowers_left": bool}',
-    "system_prompt": "Answer with one JSON object.",
+    "system_prompt": "Three cameras. Answer with one JSON object.",
 })
-A, B, C, D = (s.instruction for s in TINY.steps)
+A, B, C = (s.instruction for s in TINY.steps)
+OPEN = TINY.unclear.instruction
 HOME = TINY.done_instruction
-CYCLE = [A, A, B, C, D]
+
+
+def scene(scene_id, reason="test"):
+    return {"reason": reason, "scene": scene_id}
 
 
 class Script:
-    """Scripted vision model: answers are consumed in order; an Exception is raised."""
+    """Scripted vision model: answers are consumed in order (an Exception is raised);
+    once they run out every scene is S_END."""
 
     def __init__(self, *answers):
-        self.answers, self.questions = list(answers), []
+        self.answers, self.calls = list(answers), []
 
-    def __call__(self, images, question, system_prompt):
-        self.questions.append(question)
-        answer = self.answers.pop(0)
+    def __call__(self, images, question, system_prompt, cameras):
+        self.calls.append((question, system_prompt, tuple(cameras)))
+        answer = self.answers.pop(0) if self.answers else scene("S_END")
         if isinstance(answer, Exception):
             raise answer
         return answer
 
 
-def drive(machine, answers, requests):
-    """Drive the machine like the relay does; return the forwarded instructions."""
-    sent, answers = [], list(answers)
+def drive(machine, requests, scenes=()):
+    """Drive the machine like the relay does; return the forwarded instructions.
+    Every classification after the given scenes run out is S_END."""
+    sent, scenes = [], list(scenes)
     for _ in range(requests):
-        if machine.cycle_complete:
-            machine.on_flowers_left(answers.pop(0))
+        if machine.classify_due:
+            machine.on_scene(scenes.pop(0) if scenes else "S_END")
         sent.append(machine.next_instruction())
     return sent
 
@@ -80,44 +94,88 @@ class MachineTests(unittest.TestCase):
 
     def test_real_task_file_loads(self):
         self.assertTrue(CONFIG.steps)
-        self.assertIn('"blue_flowers_left"', CONFIG.flowers_left_question)
+        self.assertIn(DONE, [s.next for s in CONFIG.scenes])  # some scene must end the task
+        for s in CONFIG.scenes:
+            self.assertIn(f"- {s.id}: {s.description}", CONFIG.classify_question)
+
+    def test_classify_question_lists_scenes_in_priority_order(self):
+        question = TINY.classify_question
+        positions = [question.index(f"- {s}:") for s in ("S_END", "S_3", "S_2", "S_1", NONE)]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn('"scene"', question)
 
     def test_config_rejects_bad_values(self):
         good = json.loads(DEFAULT_TASK.read_text())
-        step = good["steps"][0]
-        for bad in ({"steps": []}, {"flowers_left_question": ""},
+        step, scene_ = good["steps"][0], good["scenes"][0]
+        for bad in ({"steps": []}, {"scenes": []},
+                    {"unclear": {**good["unclear"], "requests": 0}},
+                    {"unclear": {**good["unclear"], "state": step["state"]}},
+                    {"unclear": {**good["unclear"], "instruction": ""}},
+                    {"scenes": [{**scene_, "next": good["unclear"]["state"]}]},
+                    {"reclassify_every": 0}, {"system_prompt": ""},
+                    {"scenes": [{**scene_, "next": "NOWHERE"}]},
+                    {"scenes": [{**scene_, "id": NONE}]},
+                    {"scenes": [scene_, scene_]},
+                    {"scenes": [{**scene_, "description": " "}]},
                     {"steps": [{**step, "requests": 0}]},
+                    {"steps": [{**step, "back": "NOWHERE"}]},
                     {"steps": [{**step, "requests": True}]},
                     {"steps": [step, step]},
                     {"steps": [{**step, "state": DONE}]},
-                    {"steps": [{**step, "instruction": " "}]},
                     {"done_instruction": ""}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 TaskConfig.from_dict({**good, **bad})
 
-    def test_starts_at_the_first_step_and_cycles_until_no_flowers_left(self):
+    def test_scene_picks_the_next_state_in_any_order(self):
         machine = Machine(TINY)
-        self.assertEqual(machine.state, "FIRST")
-        states = []
-        for _ in range(5):
-            machine.next_instruction()
-            states.append(machine.state)  # `state` names the instruction just returned
-        self.assertEqual(states, ["FIRST", "FIRST", "SECOND", "THIRD", "LAST"])
-        self.assertTrue(machine.cycle_complete)
+        self.assertEqual((machine.state, machine.classify_due), ("FIRST", False))
+        machine.next_instruction(), machine.next_instruction()
+        self.assertTrue(machine.classify_due)
         with self.assertRaises(RuntimeError):
-            machine.next_instruction()  # the check must come first
-        machine = Machine(TINY)
-        self.assertEqual(drive(machine, [True, True, False], 18), CYCLE * 3 + [HOME] * 3)
-        self.assertEqual((machine.state, machine.flowers_done), (DONE, 3))
+            machine.next_instruction()  # the classification must come first
+        # FIRST -> SECOND -> THIRD -> back to SECOND (e.g. a dropped flower) -> skip to DONE.
+        sent = drive(Machine(TINY), 8, ["S_2", "S_3", "S_2", "S_END"])
+        self.assertEqual(sent, [A, A, B, C, B, HOME, HOME, HOME])
 
-    def test_no_answer_runs_another_cycle(self):
-        machine = Machine(TINY)
-        self.assertEqual(drive(machine, [None, False], 11), CYCLE * 2 + [HOME])
+    def test_same_scene_keeps_the_step_and_reclassifies_sooner(self):
+        sent = drive(Machine(TINY), 6, ["S_1", "S_2"])
+        self.assertEqual(sent, [A, A, A, A, B, HOME])  # 2 requests, S_1: 2 more (reclassify_every)
 
-    def test_real_task_runs_each_step_for_its_requests(self):
-        sent = drive(Machine(CONFIG), [False], sum(s.requests for s in CONFIG.steps) + 1)
-        expected = [s.instruction for s in CONFIG.steps for _ in range(s.requests)]
-        self.assertEqual(sent, expected + [CONFIG.done_instruction])
+    def test_no_match_opens_grippers_then_steps_back(self):
+        for answer in (None, NONE, "MADE_UP"):
+            with self.subTest(answer=answer):
+                # Unknown in SECOND: open, then FIRST with a full budget, then classify.
+                self.assertEqual(drive(Machine(TINY), 7, ["S_2", answer]), [A, A, B, OPEN, A, A, HOME])
+        # Unknown in THIRD steps back to SECOND; unknown in FIRST stays on FIRST.
+        self.assertEqual(drive(Machine(TINY), 6, ["S_3", None]), [A, A, C, OPEN, B, HOME])
+        self.assertEqual(drive(Machine(TINY), 6, [None]), [A, A, OPEN, A, A, HOME])
+
+    def test_step_back_target_overrides_the_previous_step(self):
+        steps = [{"state": t.state, "instruction": t.instruction, "requests": t.requests}
+                 for t in TINY.steps]
+        steps[2]["back"] = "FIRST"
+        config = TaskConfig.from_dict({
+            "steps": steps, "unclear": {"state": "OPEN", "instruction": OPEN, "requests": 1},
+            "scenes": [{"id": s.id, "description": s.description, "next": s.next} for s in TINY.scenes],
+            "done_instruction": HOME, "system_prompt": TINY.system_prompt})
+        # Unknown in THIRD now goes back to FIRST, not SECOND.
+        self.assertEqual(drive(Machine(config), 6, ["S_3", None]), [A, A, C, OPEN, A, A])
+
+    def test_no_classification_while_opening(self):
+        machine = Machine(TINY)
+        drive(machine, 2)
+        machine.on_scene(None)
+        self.assertEqual((machine.state, machine.classify_due), ("OPEN", False))
+        self.assertEqual(machine.next_instruction(), OPEN)
+        self.assertFalse(machine.classify_due)  # straight back to FIRST, no classify in between
+        self.assertEqual((machine.next_instruction(), machine.state), (A, "FIRST"))
+
+    def test_real_task_starts_with_the_first_step_for_its_requests(self):
+        first = CONFIG.steps[0]
+        machine = Machine(CONFIG)
+        self.assertEqual([machine.next_instruction() for _ in range(first.requests)],
+                         [first.instruction] * first.requests)
+        self.assertTrue(machine.classify_due)
 
 
 # ---- relay: fake WALLX + fake client --------------------------------------------
@@ -155,31 +213,40 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         return [o["instruction"] for o in received], received, logs
 
     async def test_full_run_forwards_only_the_instruction_change(self):
-        ask = Script({"blue_flowers_left": True}, {"blue_flowers_left": False})
-        sent, received, logs = await self.run_session([[GOAL] * 12], ask)
-        self.assertEqual(sent, CYCLE * 2 + [HOME] * 2)
-        self.assertEqual(ask.questions, [TINY.flowers_left_question] * 2)
+        ask = Script(scene("S_2"), scene("S_3", "Flower held above the bottle."), scene("S_END"))
+        sent, received, logs = await self.run_session([[GOAL] * 6], ask)
+        self.assertEqual(sent, [A, A, B, C, HOME, HOME])
         for obs in received:
             self.assertEqual(obs["observation"], observation()["observation"])
             self.assertEqual(obs["control_context"], observation()["control_context"])
-        states = [(r["state"], r["flowers_done"]) for r in logs if r["event"] == "state"]
-        self.assertEqual(states, [(name, n) for n in (0, 1) for name in ("FIRST", "SECOND", "THIRD", "LAST")]
-                         + [(DONE, 2)])
+        # Every classification asks the scene question about the front camera only.
+        self.assertEqual(CLASSIFY_CAMERAS, ("front",))
+        self.assertEqual(ask.calls, [(TINY.classify_question, TINY.system_prompt, ("front",))] * 3)
+        classified = [(r["from"], r["scene"], r["to"]) for r in logs if r["event"] == "classify"]
+        self.assertEqual(classified, [("FIRST", "S_2", "SECOND"), ("SECOND", "S_3", "THIRD"),
+                                      ("THIRD", "S_END", DONE)])
+        self.assertEqual([r["reason"] for r in logs if r["event"] == "classify"][1],
+                         "Flower held above the bottle.")
+        self.assertEqual([r["state"] for r in logs if r["event"] == "state"],
+                         ["FIRST", "SECOND", "THIRD", DONE])
         for record in logs:
             self.assertNotIn("aW1hZ2U=", json.dumps(record))  # one JSON line, no images
 
-    async def test_vision_failures_do_not_close_the_session(self):
-        ask = Script(RuntimeError("boom"), "garbage", {"blue_flowers_left": "no"},
-                     {"blue_flowers_left": False})
-        sent, _, logs = await self.run_session([[GOAL] * 21], ask)
-        self.assertEqual(sent, CYCLE * 4 + [HOME])
-        checks = [r for r in logs if r["event"] == "flower_check"]
-        self.assertEqual([c["blue_flowers_left"] for c in checks], [None, None, None, False])
-        self.assertEqual(checks[0]["error"], "RuntimeError")
+    async def test_vision_failures_open_grippers_without_closing(self):
+        ask = Script(scene("S_2"), RuntimeError("boom"), "garbage", {"scene": 3}, scene(NONE))
+        sent, _, logs = await self.run_session([[GOAL] * 16], ask)
+        # Each failure opens the grippers, then steps back to FIRST with a fresh budget.
+        self.assertEqual(sent, [A, A, B] + [OPEN, A, A] * 4 + [HOME])
+        classified = [r for r in logs if r["event"] == "classify"]
+        self.assertEqual([(r["scene"], r["to"]) for r in classified],
+                         [("S_2", "SECOND"), (None, "OPEN"), (None, "OPEN"), (None, "OPEN"),
+                          (NONE, "OPEN"), ("S_END", DONE)])
+        self.assertEqual(classified[1]["error"], "RuntimeError")
         self.assertFalse(any(r["event"] == "harness_failed" for r in logs))
 
     async def test_new_goal_or_connection_starts_a_fresh_machine(self):
-        sent, _, logs = await self.run_session([[GOAL, GOAL, GOAL, "Another case."], [GOAL]], Script())
+        ask = Script(scene("S_2"))
+        sent, _, logs = await self.run_session([[GOAL, GOAL, GOAL, "Another case."], [GOAL]], ask)
         self.assertEqual(sent, [A, A, B, A, A])
         self.assertEqual([r["client_goal"] for r in logs if r["event"] == "session_start"],
                          [GOAL, "Another case.", GOAL])
@@ -226,6 +293,23 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
 
 
 class VisionClientTests(unittest.TestCase):
+    def test_ask_sends_only_the_requested_cameras(self):
+        bodies = []
+
+        def urlopen(request, timeout):
+            bodies.append(json.loads(request.data))
+            reply = {"choices": [{"message": {"content": '```json\n{"completed": true}\n```'}}]}
+            return io.BytesIO(json.dumps(reply).encode())
+
+        client = VisionClient("http://vision.invalid/v1/chat/completions", "test-vision")
+        images = observation()["observation"]["images"]
+        with mock.patch("flower_harness.urllib.request.urlopen", urlopen):
+            self.assertEqual(client.ask(images, "Done?", "Front camera.", ("front",)), {"completed": True})
+            client.ask(images, "Left?", "Three cameras.")
+        names = [[p["text"] for p in b["messages"][1]["content"][1:] if p["type"] == "text"]
+                 for b in bodies]
+        self.assertEqual(names, [["front"], list(CAMERAS)])
+
     def test_parse_tolerates_prose_and_fences(self):
         self.assertEqual(parse_json_object('{"blue_flowers_left": true}'), {"blue_flowers_left": True})
         self.assertEqual(parse_json_object('Sure!\n```json\n{"blue_flowers_left": false}\n```'),
