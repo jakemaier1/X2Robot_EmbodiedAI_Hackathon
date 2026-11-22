@@ -1,0 +1,5 @@
+# Local settings hold the API key; never commit them.
+local_settings.py
+
+__pycache__/
+.venv/

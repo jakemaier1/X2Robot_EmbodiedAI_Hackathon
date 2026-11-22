@@ -1,0 +1,107 @@
+{"event": "verify_start", "index": 40, "state": "VERIFY_GRAB", "item": "carrot", "question": "Is the carrot held in a gripper, lifted off the table? Answer with JSON: {\"holding\": bool, \"is_target\": bool}"}
+{"event": "verify_error", "error": "HTTPError"}
+{"event": "verify_result", "index": 40, "item": "carrot", "verdict": null, "ms": 159.9}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "VERIFY_GRAB", "to": "GRAB", "reason": "no_verdict", "index": 40, "elapsed_s": 55.28}
+{"event": "chunk", "index": 40, "elapsed_ms": 252.3, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 55.37}
+{"event": "chunk", "index": 41, "elapsed_ms": 84.3, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 56.66}
+{"event": "chunk", "index": 42, "elapsed_ms": 84.3, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 57.98}
+{"event": "chunk", "index": 43, "elapsed_ms": 88.0, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 59.29}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "GRAB", "to": "VERIFY_GRAB", "reason": "verify_due", "index": 44, "elapsed_s": 60.51}
+{"event": "verify_start", "index": 44, "state": "VERIFY_GRAB", "item": "carrot", "question": "Is the carrot held in a gripper, lifted off the table? Answer with JSON: {\"holding\": bool, \"is_target\": bool}"}
+{"event": "verify_error", "error": "HTTPError"}
+{"event": "verify_result", "index": 44, "item": "carrot", "verdict": null, "ms": 167.3}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "VERIFY_GRAB", "to": "GRAB", "reason": "no_verdict", "index": 44, "elapsed_s": 60.68}
+{"event": "chunk", "index": 44, "elapsed_ms": 249.3, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 60.76}
+{"event": "chunk", "index": 45, "elapsed_ms": 84.5, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 62.06}
+{"event": "chunk", "index": 46, "elapsed_ms": 75.1, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 63.46}
+{"event": "chunk", "index": 47, "elapsed_ms": 92.2, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 64.78}
+{"event": "closed", "message": "Connection closed; end/confirm the session in WebUI."}
+{"event": "session_start", "client_goal": "Put all the orange objects into the basket."}
+{"event": "start", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "items": ["carrot", "carton", "tangerine"], "index": 0, "elapsed_s": 0.0}
+{"event": "chunk", "index": 0, "elapsed_ms": 310.2, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 0.31}
+{"event": "chunk", "index": 1, "elapsed_ms": 157.5, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 1.76}
+{"event": "chunk", "index": 2, "elapsed_ms": 149.2, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 3.27}
+{"event": "chunk", "index": 3, "elapsed_ms": 200.8, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 4.92}
+{"event": "chunk", "index": 4, "elapsed_ms": 95.5, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 6.44}
+{"event": "chunk", "index": 5, "elapsed_ms": 96.2, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 7.78}
+{"event": "chunk", "index": 6, "elapsed_ms": 105.7, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 9.24}
+{"event": "chunk", "index": 7, "elapsed_ms": 262.7, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 10.93}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "GRAB", "to": "VERIFY_GRAB", "reason": "verify_due", "index": 8, "elapsed_s": 12.21}
+{"event": "verify_start", "index": 8, "state": "VERIFY_GRAB", "item": "carrot", "question": "Is the carrot held in a gripper, lifted off the table? Answer with JSON: {\"holding\": bool, \"is_target\": bool}"}
+{"event": "verify_error", "error": "HTTPError"}
+{"event": "verify_result", "index": 8, "item": "carrot", "verdict": null, "ms": 357.0}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "VERIFY_GRAB", "to": "GRAB", "reason": "no_verdict", "index": 8, "elapsed_s": 12.57}
+{"event": "chunk", "index": 8, "elapsed_ms": 476.1, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 12.69}
+{"event": "chunk", "index": 9, "elapsed_ms": 110.8, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 14.1}
+{"event": "chunk", "index": 10, "elapsed_ms": 208.7, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 15.71}
+{"event": "chunk", "index": 11, "elapsed_ms": 113.4, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 17.2}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "GRAB", "to": "VERIFY_GRAB", "reason": "verify_due", "index": 12, "elapsed_s": 18.47}
+{"event": "verify_start", "index": 12, "state": "VERIFY_GRAB", "item": "carrot", "question": "Is the carrot held in a gripper, lifted off the table? Answer with JSON: {\"holding\": bool, \"is_target\": bool}"}
+{"event": "verify_error", "error": "HTTPError"}
+{"event": "verify_result", "index": 12, "item": "carrot", "verdict": null, "ms": 277.3}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "VERIFY_GRAB", "to": "GRAB", "reason": "no_verdict", "index": 12, "elapsed_s": 18.75}
+{"event": "chunk", "index": 12, "elapsed_ms": 394.1, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 18.86}
+{"event": "chunk", "index": 13, "elapsed_ms": 143.0, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 20.28}
+{"event": "chunk", "index": 14, "elapsed_ms": 107.4, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 21.62}
+{"event": "chunk", "index": 15, "elapsed_ms": 105.8, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 22.97}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "GRAB", "to": "VERIFY_GRAB", "reason": "verify_due", "index": 16, "elapsed_s": 24.2}
+{"event": "verify_start", "index": 16, "state": "VERIFY_GRAB", "item": "carrot", "question": "Is the carrot held in a gripper, lifted off the table? Answer with JSON: {\"holding\": bool, \"is_target\": bool}"}
+{"event": "verify_error", "error": "HTTPError"}
+{"event": "verify_result", "index": 16, "item": "carrot", "verdict": null, "ms": 171.0}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "VERIFY_GRAB", "to": "GRAB", "reason": "no_verdict", "index": 16, "elapsed_s": 24.37}
+{"event": "chunk", "index": 16, "elapsed_ms": 257.3, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 24.46}
+{"event": "chunk", "index": 17, "elapsed_ms": 109.5, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 25.81}
+{"event": "chunk", "index": 18, "elapsed_ms": 101.5, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 27.15}
+{"event": "chunk", "index": 19, "elapsed_ms": 77.3, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 28.45}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "GRAB", "to": "VERIFY_GRAB", "reason": "verify_due", "index": 20, "elapsed_s": 29.68}
+{"event": "verify_start", "index": 20, "state": "VERIFY_GRAB", "item": "carrot", "question": "Is the carrot held in a gripper, lifted off the table? Answer with JSON: {\"holding\": bool, \"is_target\": bool}"}
+{"event": "verify_error", "error": "HTTPError"}
+{"event": "verify_result", "index": 20, "item": "carrot", "verdict": null, "ms": 174.7}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "VERIFY_GRAB", "to": "GRAB", "reason": "no_verdict", "index": 20, "elapsed_s": 29.85}
+{"event": "chunk", "index": 20, "elapsed_ms": 264.3, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 29.94}
+{"event": "chunk", "index": 21, "elapsed_ms": 85.3, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 31.26}
+{"event": "chunk", "index": 22, "elapsed_ms": 77.7, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 32.54}
+{"event": "chunk", "index": 23, "elapsed_ms": 91.4, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 33.87}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "GRAB", "to": "VERIFY_GRAB", "reason": "verify_due", "index": 24, "elapsed_s": 35.1}
+{"event": "verify_start", "index": 24, "state": "VERIFY_GRAB", "item": "carrot", "question": "Is the carrot held in a gripper, lifted off the table? Answer with JSON: {\"holding\": bool, \"is_target\": bool}"}
+{"event": "verify_error", "error": "HTTPError"}
+{"event": "verify_result", "index": 24, "item": "carrot", "verdict": null, "ms": 184.2}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "VERIFY_GRAB", "to": "GRAB", "reason": "no_verdict", "index": 24, "elapsed_s": 35.29}
+{"event": "chunk", "index": 24, "elapsed_ms": 273.8, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 35.38}
+{"event": "chunk", "index": 25, "elapsed_ms": 87.2, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 36.69}
+{"event": "chunk", "index": 26, "elapsed_ms": 83.1, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 37.99}
+{"event": "chunk", "index": 27, "elapsed_ms": 91.3, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 39.28}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "GRAB", "to": "VERIFY_GRAB", "reason": "verify_due", "index": 28, "elapsed_s": 40.53}
+{"event": "verify_start", "index": 28, "state": "VERIFY_GRAB", "item": "carrot", "question": "Is the carrot held in a gripper, lifted off the table? Answer with JSON: {\"holding\": bool, \"is_target\": bool}"}
+{"event": "verify_error", "error": "HTTPError"}
+{"event": "verify_result", "index": 28, "item": "carrot", "verdict": null, "ms": 196.7}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "VERIFY_GRAB", "to": "GRAB", "reason": "no_verdict", "index": 28, "elapsed_s": 40.73}
+{"event": "chunk", "index": 28, "elapsed_ms": 299.3, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 40.83}
+{"event": "chunk", "index": 29, "elapsed_ms": 95.4, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 42.15}
+{"event": "chunk", "index": 30, "elapsed_ms": 87.6, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 43.44}
+{"event": "chunk", "index": 31, "elapsed_ms": 84.9, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 44.76}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "GRAB", "to": "VERIFY_GRAB", "reason": "verify_due", "index": 32, "elapsed_s": 45.99}
+{"event": "verify_start", "index": 32, "state": "VERIFY_GRAB", "item": "carrot", "question": "Is the carrot held in a gripper, lifted off the table? Answer with JSON: {\"holding\": bool, \"is_target\": bool}"}
+{"event": "verify_error", "error": "HTTPError"}
+{"event": "verify_result", "index": 32, "item": "carrot", "verdict": null, "ms": 191.2}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "VERIFY_GRAB", "to": "GRAB", "reason": "no_verdict", "index": 32, "elapsed_s": 46.18}
+{"event": "chunk", "index": 32, "elapsed_ms": 275.2, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 46.26}
+{"event": "chunk", "index": 33, "elapsed_ms": 98.3, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 47.59}
+{"event": "chunk", "index": 34, "elapsed_ms": 86.2, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 49.02}
+{"event": "chunk", "index": 35, "elapsed_ms": 86.0, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 50.34}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "GRAB", "to": "VERIFY_GRAB", "reason": "verify_due", "index": 36, "elapsed_s": 51.57}
+{"event": "verify_start", "index": 36, "state": "VERIFY_GRAB", "item": "carrot", "question": "Is the carrot held in a gripper, lifted off the table? Answer with JSON: {\"holding\": bool, \"is_target\": bool}"}
+{"event": "verify_error", "error": "HTTPError"}
+{"event": "verify_result", "index": 36, "item": "carrot", "verdict": null, "ms": 177.3}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "VERIFY_GRAB", "to": "GRAB", "reason": "no_verdict", "index": 36, "elapsed_s": 51.75}
+{"event": "chunk", "index": 36, "elapsed_ms": 283.3, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 51.85}
+{"event": "chunk", "index": 37, "elapsed_ms": 88.8, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 53.16}
+{"event": "chunk", "index": 38, "elapsed_ms": 83.9, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 54.45}
+{"event": "chunk", "index": 39, "elapsed_ms": 97.2, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 55.81}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "GRAB", "to": "VERIFY_GRAB", "reason": "verify_due", "index": 40, "elapsed_s": 57.03}
+{"event": "verify_start", "index": 40, "state": "VERIFY_GRAB", "item": "carrot", "question": "Is the carrot held in a gripper, lifted off the table? Answer with JSON: {\"holding\": bool, \"is_target\": bool}"}
+{"event": "verify_error", "error": "HTTPError"}
+{"event": "verify_result", "index": 40, "item": "carrot", "verdict": null, "ms": 182.5}
+{"event": "transition", "item": "carrot", "attempts": 0, "round": 1, "skipped": [], "from": "VERIFY_GRAB", "to": "GRAB", "reason": "no_verdict", "index": 40, "elapsed_s": 57.22}
+{"event": "chunk", "index": 40, "elapsed_ms": 295.4, "instruction": "Pick up the carrot.", "state": "GRAB", "item": "carrot", "attempts": 0, "round": 1, "placed": [], "skipped": [], "failed": [], "done_reason": null, "elapsed_s": 57.33}
+{"event": "closed", "message": "Connection closed; end/confirm the session in WebUI."}
