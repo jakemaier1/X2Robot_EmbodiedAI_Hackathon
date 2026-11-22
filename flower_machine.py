@@ -16,8 +16,18 @@ success. Empty queue -> DONE: forward the home instruction for done_requests
 requests, then `finished` is True and the relay closes the session and exits.
 States, wording, lengths and prompts are data in flower_task.json.
 
+With a grasp_check config, VERIFY_GRASP runs once the `after` step (GRAB_FLOWER)
+has run: the relay asks Claude which flower the gripper holds. Right color ->
+next step. Another color that the queue still needs -> swap: place this one now,
+the original color goes back on the front of the queue. Another color nobody
+needs -> PUT_BACK (put it down), then grab again. Nothing held -> grab again.
+Grabs again at most regrabs_per_action times, then the action is given up.
+Unclear, or the call failed -> carry on as if right.
+
 Driving protocol, once per client request:
     machine = Machine(config, plan)       # plan: validate_plan(...) or fallback_plan(...)
+    if machine.awaiting_verify:
+        machine.on_held(held)             # a color, "none", or None if unclear/failed
     if machine.awaiting_check:
         machine.on_vase_counts(counts)    # {color: int}, or None if the call failed
     observation["instruction"] = machine.next_instruction()
@@ -29,6 +39,9 @@ from dataclasses import dataclass
 import re
 
 DONE = "DONE"
+VERIFY = "VERIFY_GRASP"
+PUT_BACK = "PUT_BACK"
+NOTHING = "none"  # grasp check: the gripper holds no flower
 COLOR = "{color}"
 INSTRUCTION = "{instruction}"
 
@@ -47,6 +60,16 @@ class Action:
 
 
 @dataclass(frozen=True)
+class GraspCheck:
+    after: str  # state after which to verify the held flower
+    regrabs_per_action: int
+    put_back_instruction: str  # may contain {color}: the color actually held
+    put_back_requests: int
+    system_prompt: str
+    question: str
+
+
+@dataclass(frozen=True)
 class TaskConfig:
     colors: tuple
     max_actions: int
@@ -58,6 +81,7 @@ class TaskConfig:
     planner_question: str  # must contain {instruction}
     check_system_prompt: str
     check_question: str
+    grasp_check: GraspCheck = None  # None: no VERIFY_GRASP
 
     @classmethod
     def from_dict(cls, data):
@@ -72,6 +96,7 @@ class TaskConfig:
             planner_question=data["planner_question"],
             check_system_prompt=data["check_system_prompt"],
             check_question=data["check_question"],
+            grasp_check=GraspCheck(**data["grasp_check"]) if data.get("grasp_check") else None,
         )
         states = [s.state for s in config.steps]
         texts = ([config.done_instruction, config.planner_system_prompt, config.planner_question,
@@ -93,6 +118,19 @@ class TaskConfig:
             raise ValueError("retries_per_action must be an integer >= 0")
         if INSTRUCTION not in config.planner_question:
             raise ValueError(f"planner_question must contain {INSTRUCTION}")
+        gc = config.grasp_check
+        if gc is not None:
+            if gc.after not in states[:-1]:
+                raise ValueError("grasp_check.after must name a step other than the last")
+            if {VERIFY, PUT_BACK, NOTHING} & set(states + list(config.colors)):
+                raise ValueError(f"{VERIFY}, {PUT_BACK} and {NOTHING} are reserved names")
+            if type(gc.regrabs_per_action) is not int or gc.regrabs_per_action < 0:
+                raise ValueError("grasp_check.regrabs_per_action must be an integer >= 0")
+            if type(gc.put_back_requests) is not int or gc.put_back_requests < 1:
+                raise ValueError("grasp_check.put_back_requests must be an integer >= 1")
+            if not all(isinstance(t, str) and t.strip()
+                       for t in (gc.put_back_instruction, gc.system_prompt, gc.question)):
+                raise ValueError("grasp_check texts must be non-empty strings")
         return config
 
     def instruction(self, step, color):
@@ -108,12 +146,15 @@ class Machine:
         self.in_vase = dict.fromkeys(config.colors, 0)  # last known count per color
         self.started = 0  # actions started, retries included
         self.done_sent = 0  # home instructions returned
+        self.put_back = None  # (color held, requests sent) while putting a wrong flower down
         self.action = None
         self._next_action()
 
     def _next_action(self):
         self.action = self.queue.popleft() if self.queue else None
         self.step = self.sent = 0
+        self.verified = False  # grasp checked since the last grab
+        self.regrabs = 0
         if self.action:
             self.started += 1
 
@@ -123,7 +164,46 @@ class Machine:
 
     @property
     def state(self):
-        return DONE if self.done else self.config.steps[self.step].state
+        if self.put_back:
+            return PUT_BACK
+        if self.done:
+            return DONE
+        return self.config.steps[self.step].state
+
+    @property
+    def awaiting_verify(self):
+        """True once the grasp_check `after` step has run and the grasp is unchecked."""
+        gc, step = self.config.grasp_check, None if self.done else self.config.steps[self.step]
+        return (gc is not None and step is not None and not self.verified and not self.put_back
+                and step.state == gc.after and self.sent >= step.requests)
+
+    def on_held(self, held):
+        """held: the color Claude sees in the gripper, NOTHING, or None if unclear or the
+        call failed. Returns 'match', 'assumed', 'swap', 'put_back', 'regrab' or 'gave_up'."""
+        if not self.awaiting_verify:
+            raise RuntimeError("on_held called when no grasp check was due")
+        self.verified = True
+        action = self.action
+        if held is None:
+            return "assumed"
+        if held == action.color:
+            return "match"
+        if held in self.config.colors:
+            needed = next((i for i, a in enumerate(self.queue) if a.color == held), None)
+            if needed is not None:  # place what we hold; the wanted color waits its turn
+                swapped = self.queue[needed]
+                del self.queue[needed]
+                self.queue.appendleft(action)
+                self.action = Action(held, swapped.attempt)
+                return "swap"
+            self.put_back = (held, 0)
+        if self.regrabs < self.config.grasp_check.regrabs_per_action:
+            self.regrabs += 1
+            self.step = self.sent = 0
+            self.verified = False
+            return "put_back" if self.put_back else "regrab"
+        self._next_action()
+        return "gave_up"
 
     @property
     def finished(self):
@@ -173,6 +253,15 @@ class Machine:
 
     def next_instruction(self):
         """Return the instruction for this request; `state` then names its state."""
+        if self.awaiting_verify:
+            raise RuntimeError("Call on_held() first")
+        if self.put_back:
+            held, sent = self.put_back
+            gc = self.config.grasp_check
+            if sent < gc.put_back_requests:
+                self.put_back = (held, sent + 1)
+                return gc.put_back_instruction.replace(COLOR, held)
+            self.put_back = None
         if not self.done and self.sent >= self.config.steps[self.step].requests:
             if self.action_complete:
                 if self.awaiting_check:
@@ -218,7 +307,8 @@ SKIP_CLAUSE = re.compile(r"\b(leave|leaving|don'?t|do not|not|never|except|witho
 def fallback_plan(instruction, config):
     """Best-effort plan from the instruction text alone. Unparseable -> one action
     of the first color."""
-    colors = "|".join(re.escape(c) for c in config.colors)
+    spelled = {c.lower(): c for c in config.colors}  # match any case, keep the config's spelling
+    colors = "|".join(re.escape(c) for c in spelled)
     mention = re.compile(
         r"\b(?:(?P<qty>" + "|".join(NUMBERS) + r"|all|every|each|the)\s+(?:of\s+)?(?:the\s+)?)?"
         r"(?:(?P<color>" + colors + r")\s+)?(?P<noun>flowers?|roses?|peon(?:y|ies)|ones?)\b")
@@ -228,11 +318,9 @@ def fallback_plan(instruction, config):
             continue
         for m in mention.finditer(clause):
             qty, noun = m["qty"], m["noun"]
-            color = m["color"] or FLOWER_COLORS.get(noun)
-            if color is None and noun.startswith("one"):
-                continue  # 'put one in' names no color
-            if color is not None and color not in config.colors:
-                continue
+            color = spelled.get(m["color"] or FLOWER_COLORS.get(noun))
+            if color is None and (m["color"] or noun in FLOWER_COLORS or noun.startswith("one")):
+                continue  # a color this config lacks, or 'put one in' (names no color)
             every = qty not in NUMBERS and (qty in ("all", "every", "each") or noun.endswith("s"))
             count = NUMBERS.get(qty, PLURAL_COUNT if every else 1)
             # No color: 'all the flowers' means every color; 'two flowers' the first one.

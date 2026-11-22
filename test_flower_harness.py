@@ -23,10 +23,12 @@ from flower_machine import DONE, Machine, TaskConfig, fallback_plan, validate_co
 GOAL = "Put both blue flowers in the vase"
 CONFIG = load_task(DEFAULT_TASK)
 HOME = CONFIG.done_instruction
-# GRAB_FLOWER lasts 2 requests, INSERT_STEM 1.
+# Two steps, 3 requests per action: GRAB_FLOWER lasts 2 requests, INSERT_STEM 1.
 TINY = replace(CONFIG, steps=tuple(replace(s, requests=2 if i == 0 else 1)
-                                   for i, s in enumerate(CONFIG.steps)))
+                                   for i, s in enumerate(CONFIG.steps[:2])), grasp_check=None)
 NO_RETRY = replace(TINY, retries_per_action=0)
+# NO_RETRY plus VERIFY_GRASP after GRAB_FLOWER; PUT_BACK lasts 2 requests.
+GRASP = replace(NO_RETRY, grasp_check=replace(CONFIG.grasp_check, put_back_requests=2))
 
 
 def cycle(color, config=TINY):
@@ -42,6 +44,8 @@ def drive(machine, answers, requests):
     """Drive the machine like the relay does; return the forwarded instructions."""
     sent, answers = [], list(answers)
     for _ in range(requests):
+        if machine.awaiting_verify:
+            machine.on_held(machine.action.color)  # holding the right flower
         if machine.awaiting_check:
             machine.on_vase_counts(answers.pop(0))
         sent.append(machine.next_instruction())
@@ -60,6 +64,9 @@ class FakeVision:
         return self._next(self.plans)
 
     def vase_counts(self, images):
+        return self._next(self.checks)
+
+    def held_color(self, images):  # grasp and vase checks share one script, in call order
         return self._next(self.checks)
 
     @staticmethod
@@ -123,8 +130,8 @@ class MachineTests(unittest.TestCase):
         sent = drive(machine, [counts(blue=1), counts(blue=1, white=1)], 8)
         self.assertEqual(sent, cycle("blue") + cycle("white") + [HOME] * 2)
         self.assertTrue(all("{color}" not in s for s in sent))
-        self.assertIn("Grab the blue flower", sent[0])
-        self.assertIn("white flower stem", sent[5])
+        self.assertEqual(sent[0], TINY.steps[0].instruction.replace("{color}", "blue"))
+        self.assertEqual(sent[5], TINY.steps[1].instruction.replace("{color}", "white"))
         self.assertEqual((machine.state, machine.started, machine.in_vase),
                          (DONE, 2, counts(blue=1, white=1)))
 
@@ -195,10 +202,73 @@ class MachineTests(unittest.TestCase):
 
     def test_default_config_lengths(self):
         sent = drive(Machine(CONFIG, ["white"]), [counts(white=1)], sum(s.requests for s in CONFIG.steps) + 1)
-        grab, insert = (CONFIG.instruction(s, "white") for s in CONFIG.steps)
-        self.assertEqual(sent[:CONFIG.steps[0].requests], [grab] * CONFIG.steps[0].requests)
-        self.assertEqual(sent.count(insert), CONFIG.steps[1].requests)
-        self.assertEqual(sent[-2:], [insert, HOME])
+        expected = [CONFIG.instruction(s, "white") for s in CONFIG.steps for _ in range(s.requests)]
+        self.assertEqual(sent, expected + [HOME])
+
+
+class GraspCheckTests(unittest.TestCase):
+    def grab(self, machine):
+        """Run GRAB_FLOWER to the grasp check."""
+        sent = [machine.next_instruction() for _ in range(2)]
+        self.assertTrue(machine.awaiting_verify)
+        with self.assertRaises(RuntimeError):
+            machine.next_instruction()
+        return sent
+
+    def test_right_color_or_unclear_goes_on_to_insert(self):
+        for held, outcome in (("blue", "match"), (None, "assumed")):
+            with self.subTest(held=held):
+                machine = Machine(GRASP, ["blue"])
+                self.assertEqual(self.grab(machine), cycle("blue")[:2])
+                self.assertEqual(machine.on_held(held), outcome)
+                self.assertEqual([machine.next_instruction() for _ in range(2)],
+                                 [cycle("blue")[2], HOME])
+
+    def test_wrong_color_still_needed_swaps_the_queue(self):
+        machine = Machine(GRASP, ["blue", "white"])
+        self.grab(machine)
+        self.assertEqual(machine.on_held("white"), "swap")
+        self.assertEqual((machine.action.color, machine.queued), ("white", ["blue"]))
+        self.assertEqual(machine.next_instruction(), cycle("white")[2])  # insert the white one
+
+    def test_wrong_color_not_needed_is_put_back_then_grabbed_again(self):
+        machine = Machine(GRASP, ["blue"])
+        self.grab(machine)
+        self.assertEqual(machine.on_held("white"), "put_back")
+        put_back = GRASP.grasp_check.put_back_instruction.replace("{color}", "white")
+        sent = []
+        for _ in range(4):
+            sent.append(machine.next_instruction())
+            sent.append(machine.state)
+        self.assertEqual(sent, [put_back, "PUT_BACK", put_back, "PUT_BACK",
+                                *[x for i in cycle("blue")[:2] for x in (i, "GRAB_FLOWER")]])
+        self.assertEqual(machine.on_held("blue"), "match")
+
+    def test_nothing_held_grabs_again_then_gives_up(self):
+        machine = Machine(GRASP, ["blue", "white"])
+        self.grab(machine)
+        self.assertEqual(machine.on_held("none"), "regrab")
+        self.grab(machine)
+        self.assertEqual(machine.on_held("none"), "gave_up")
+        self.assertEqual((machine.action.color, machine.queued), ("white", []))
+        # Gave up while holding a wrong flower: it is still put down first.
+        machine = Machine(GRASP, ["blue"])
+        for _ in range(2):
+            self.grab(machine)
+            outcome = machine.on_held("white")
+            for _ in range(2 if outcome == "put_back" else 0):
+                machine.next_instruction()
+        self.assertEqual(outcome, "gave_up")
+        self.assertEqual((machine.state, machine.next_instruction()),
+                         ("PUT_BACK", GRASP.grasp_check.put_back_instruction.replace("{color}", "white")))
+
+    def test_grasp_check_config_is_checked(self):
+        good = json.loads(DEFAULT_TASK.read_text())
+        self.assertEqual(CONFIG.grasp_check.after, "GRAB_FLOWER")
+        for bad in ({"after": "INSERT_STEM"}, {"after": "NOPE"}, {"regrabs_per_action": -1},
+                    {"put_back_requests": 0}, {"question": ""}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                TaskConfig.from_dict({**good, "grasp_check": {**good["grasp_check"], **bad}})
 
 
 class PlanTests(unittest.TestCase):
@@ -231,6 +301,9 @@ class PlanTests(unittest.TestCase):
             "Put two flowers in the vase": ["blue", "blue"],
             "Do a little dance": ["blue"],
         }
+        upper = replace(TINY, colors=("BLUE", "WHITE"))
+        self.assertEqual(fallback_plan("Put both blue flowers and one peony in", upper),
+                         ["BLUE", "BLUE", "WHITE"])
         for instruction, plan in cases.items():
             with self.subTest(instruction=instruction):
                 self.assertEqual(fallback_plan(instruction, TINY), plan)
@@ -272,7 +345,9 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_full_run_plans_then_forwards_only_the_instruction_change(self):
         goal = "Put both white flowers in the vase; leave the blue ones alone"
-        vision = FakeVision([{"actions": ["white", "white"]}], [counts(white=1), counts(white=2)])
+        vision = FakeVision([{"actions": ["white", "white"]}],
+                            [{**counts(white=1), "scene": "One white flower stands in the cup."},
+                             counts(white=2)])
         sent, received, logs = await self.run_session([[goal] * 8], vision)
         self.assertEqual(sent, cycle("white") * 2 + [HOME] * 2)
         self.assertEqual(vision.planned, [goal])
@@ -283,12 +358,32 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(p["source"], p["plan"]) for p in plans], [("claude", ["white", "white"])])
         self.assertEqual([r["outcome"] for r in logs if r["event"] == "vase_check"],
                          ["placed", "placed"])
+        self.assertEqual([r.get("scene") for r in logs if r["event"] == "vase_check"],
+                         ["One white flower stands in the cup.", None])
         states = [(r["state"], r["action"], r["color"]) for r in logs if r["event"] == "state"]
         self.assertEqual(states, [("GRAB_FLOWER", 1, "white"), ("INSERT_STEM", 1, "white"),
                                   ("GRAB_FLOWER", 2, "white"), ("INSERT_STEM", 2, "white"),
                                   (DONE, 2, None)])
         for record in logs:
             self.assertNotIn("aW1hZ2U=", json.dumps(record))  # one JSON line, no images
+
+    async def test_grasp_check_swaps_a_wrong_but_needed_flower(self):
+        vision = FakeVision([{"actions": ["blue", "white"]}],
+                            [{"scene": "Left gripper holds a white peony.", "held": "white"}])
+        sent, _, logs = await self.run_session([[GOAL] * 4], vision, config=GRASP)
+        self.assertEqual(sent, cycle("blue")[:2] + [cycle("white")[2], cycle("blue")[0]])
+        (check,) = [r for r in logs if r["event"] == "grasp_check"]
+        self.assertEqual((check["state"], check["held"], check["wanted"], check["outcome"],
+                          check["now_placing"], check["queued"]),
+                         ("VERIFY_GRASP", "white", "blue", "swap", "white", ["blue"]))
+        self.assertEqual(check["scene"], "Left gripper holds a white peony.")
+
+    async def test_grasp_check_failure_carries_on(self):
+        vision = FakeVision([{"actions": ["blue"]}], [RuntimeError("boom")])
+        sent, _, logs = await self.run_session([[GOAL] * 4], vision, config=GRASP)
+        self.assertEqual(sent, cycle("blue") + [HOME])
+        (check,) = [r for r in logs if r["event"] == "grasp_check"]
+        self.assertEqual((check["error"], check["outcome"]), ("RuntimeError", "assumed"))
 
     async def test_failed_placement_runs_the_action_again(self):
         vision = FakeVision([{"actions": ["blue"]}], [counts()])
@@ -446,7 +541,16 @@ class ClaudeVisionTests(unittest.TestCase):
         (call,) = client.calls
         self.assertEqual(call["system"], CONFIG.check_system_prompt)
         self.assertEqual(call["output_config"]["effort"], "medium")
-        self.assertEqual(call["output_config"]["format"]["schema"]["required"], ["blue", "white"])
+        self.assertEqual(call["output_config"]["format"]["schema"]["required"],
+                         ["scene", "blue", "white"])
+
+    def test_held_color_request(self):
+        client = FakeClient('{"scene": "Right gripper holds a blue rose.", "held": "blue"}')
+        self.assertEqual(ClaudeVision(client, CONFIG).held_color(self.IMAGES)["held"], "blue")
+        (call,) = client.calls
+        self.assertEqual(call["system"], CONFIG.grasp_check.system_prompt)
+        schema = call["output_config"]["format"]["schema"]
+        self.assertEqual(schema["properties"]["held"]["enum"], ["blue", "white", "none", "unclear"])
 
     def test_refusal_or_missing_text_raises(self):
         for client in (FakeClient(stop_reason="refusal"), FakeClient(stop_reason="max_tokens"),

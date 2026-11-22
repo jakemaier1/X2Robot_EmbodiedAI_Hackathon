@@ -4,18 +4,27 @@
   "retries_per_action": 1,
 
   "steps": [
-    {"state": "GRAB_FLOWER", "requests": 10, "instruction": "Grab the {color} flower and hold it directly above the yellow bottle with several inches of clearance."},
-    {"state": "INSERT_STEM", "requests": 5, "instruction": "SUPER Slowly lower the bottom of the {color} flower stem into the bottle mouth."}
+    {"state": "GRAB_FLOWER", "requests": 5, "instruction": "pick up the {color} flower and hold it vertically"},
+    {"state": "INSERT_STEM", "requests": 10, "instruction": "put the {color} flower into the black cup stem down"}
   ],
 
-  "done_instruction": "Return both arms to the home position.",
+  "grasp_check": {
+      "after": "GRAB_FLOWER",
+      "regrabs_per_action": 1,
+      "put_back_instruction": "put the {color} flower down on the table",
+      "put_back_requests": 6,
+      "system_prompt": "You check which flower a two-arm robot is holding, from three camera images: front, left_wrist and right_wrist; each image follows its label. The wrist cameras look out from each gripper and show best what it holds. In the front image the robot's right arm appears on the left side and its left arm on the right side.\n\nThe flowers are artificial: blue roses with blue petals and white peonies with white petals, both on green stems. A flower is held when a gripper's fingers are closed on its stem and it is lifted off the table. Judge the color from the petals of the held flower only; ignore flowers still lying on the table and flowers in the black cup. Answer \"none\" if no gripper holds a flower, and \"unclear\" if you cannot see the held flower's petals well enough to tell its color.",
+      "question": "First describe in one or two sentences what each gripper is holding. Then name the color of the flower the robot is holding."
+  },
+
+  "done_instruction": "move both arms back to the home position",
   "done_requests": 3,
 
-  "planner_system_prompt": "You plan the work of a two-arm robot at a table. The robot has one action: pick up one artificial flower of a given color and put it stem-down into the vase, a heavy mug about 10 cm tall. The flowers are blue roses and white peonies, so 'rose' means blue and 'peony' means white.\n\nYou get the operator's instruction and three camera images: front, left_wrist and right_wrist. In the front image the robot's right arm appears on the left side and its left arm on the right side.\n\nReturn one action per flower that should end up in the vase, in the order the robot should do them:\n- If the instruction gives a number ('both', 'one', 'two'), use it.\n- If it gives none ('all the flowers', 'the blue flowers'), count the matching flowers lying on the table outside the vase.\n- Plan nothing for flowers the instruction says to leave alone, flowers already in the vase, or things that are not flowers (a green leaf sprig with no flower head is not a flower).\n- When flowers overlap, start with the one on top.\n- If the instruction asks for nothing these actions can do, return an empty list.",
+  "planner_system_prompt": "You plan the work of a two-arm robot at a table. The robot has one action: pick up one artificial flower of a given color and put it stem-down into the vase, which is the black cup on the table. The flowers are blue roses and white peonies, so 'rose' means blue and 'peony' means white.\n\nYou get the operator's instruction and three camera images: front, left_wrist and right_wrist. In the front image the robot's right arm appears on the left side and its left arm on the right side.\n\nReturn one action per flower that should end up in the vase, in the order the robot should do them:\n- If the instruction gives a number ('both', 'one', 'two'), use it.\n- If it gives none ('all the flowers', 'the blue flowers'), count the matching flowers lying on the table outside the vase.\n- Plan nothing for flowers the instruction says to leave alone, flowers already in the vase, or things that are not flowers (a green leaf sprig with no flower head is not a flower).\n- When flowers overlap, start with the one on top.\n- If the instruction asks for nothing these actions can do, return an empty list.",
 
   "planner_question": "Operator instruction: {instruction}",
 
-  "check_system_prompt": "You check a robot manipulation scene from three cameras: front, left_wrist and right_wrist. In the front image the robot's right arm appears on the left side and its left arm on the right side. The vase is a heavy mug about 10 cm tall. The flowers are blue roses and white peonies.",
+  "check_system_prompt": "You verify one step of a two-arm robot task from three camera images: front, left_wrist and right_wrist; each image follows its label. In the front image the robot's right arm appears on the left side and its left arm on the right side. The vase is the black cup on the table. The flowers are artificial blue roses and white peonies on long green stems.\n\nA flower counts as placed only when all of this is visible:\n- its stem goes down into the black cup, with the flower head above the rim;\n- it stays there on its own: no gripper's fingers are closed around it or touching it;\n- it is in the black cup, not in another cup.\n\nA flower a gripper is still holding is not placed, even if its stem is already inside the cup. A flower lying on the table, hanging from a gripper, or leaning against the outside of the cup is not placed. If the images do not let you tell, for example because an arm blocks the view of the cup, do not count that flower. Counting a flower that is not placed makes the robot skip a flower it still needs to place, so when in doubt, leave it out.",
 
-  "check_question": "For each color, count the flowers whose stem is inside the vase right now, including one a gripper is still holding there. Do not count flowers lying on the table, held in the air, or in any other cup."
+  "check_question": "First describe in one or two sentences what each gripper is holding and what is standing in the black cup. Then give, for each color, the number of placed flowers."
 }

@@ -32,6 +32,10 @@ Decisions (1-3 are tunable in flower_task.json)
      instruction text (flower_machine.fallback_plan). An empty plan goes home.
   2. Act: each action runs the steps with {color} filled in; each step
      forwards its instruction for `requests` client requests (~1.3 s each).
+  2b. Verify: with a grasp_check, after GRAB_FLOWER Claude names the color the
+     gripper holds (VERIFY_GRASP). Wrong color still needed -> swap the queue
+     order; wrong color not needed -> PUT_BACK, grab again; nothing -> grab
+     again (regrabs_per_action), then give the action up. Unclear -> carry on.
   3. Check: after an action, if it can still change something (a retry is
      left, or another action of that color is queued), Claude counts the
      flowers per color in the vase. No increase for the action's color -> the
@@ -72,7 +76,7 @@ from websockets.exceptions import ConnectionClosed
 
 from harness import MAX_FRAME_BYTES, instruction_text, pack, unpack
 from harness import validate_request as demo_validate_request
-from flower_machine import (INSTRUCTION, Machine, TaskConfig, fallback_plan, validate_counts,
+from flower_machine import (INSTRUCTION, NOTHING, VERIFY, Machine, TaskConfig, fallback_plan, validate_counts,
                             validate_plan)
 
 DEFAULT_TASK = Path(__file__).with_name("flower_task.json")
@@ -200,10 +204,22 @@ def plan_schema(colors):
             "required": ["actions"], "additionalProperties": False}
 
 
-def counts_schema(colors):
+UNCLEAR = "unclear"
+
+
+def held_schema(colors):
     return {"type": "object",
-            "properties": {color: {"type": "integer"} for color in colors},
-            "required": list(colors), "additionalProperties": False}
+            "properties": {"scene": {"type": "string"},
+                           "held": {"type": "string", "enum": [*colors, NOTHING, UNCLEAR]}},
+            "required": ["scene", "held"], "additionalProperties": False}
+
+
+def counts_schema(colors):
+    # "scene" comes first so the model describes what it sees before it counts.
+    return {"type": "object",
+            "properties": {"scene": {"type": "string"},
+                           **{color: {"type": "integer"} for color in colors}},
+            "required": ["scene", *colors], "additionalProperties": False}
 
 
 class ClaudeVision:
@@ -237,6 +253,10 @@ class ClaudeVision:
         return self.ask(self.config.planner_system_prompt, question, images,
                         plan_schema(self.config.colors))
 
+    def held_color(self, images):
+        gc = self.config.grasp_check
+        return self.ask(gc.system_prompt, gc.question, images, held_schema(self.config.colors))
+
     def vase_counts(self, images):
         return self.ask(self.config.check_system_prompt, self.config.check_question, images,
                         counts_schema(self.config.colors))
@@ -247,7 +267,8 @@ class ClaudeVision:
 
 class FlowerRelay:
     """vision.plan(images, instruction) and vision.vase_counts(images) return dicts
-    and may raise. They block, so they run in a thread."""
+    and may raise; so does vision.held_color(images) when the task has a grasp_check.
+    They block, so they run in a thread."""
 
     def __init__(self, upstream_url, headers, config, vision, timeout=60, log=log_json):
         self.upstream_url = upstream_url
@@ -276,6 +297,26 @@ class FlowerRelay:
         self.log({"event": "plan", "source": "keyword_fallback", "plan": plan})
         return plan
 
+    async def held_color(self, observation, index):
+        """Blocking: the held client request waits. (color, NOTHING or None, log record)."""
+        started = time.monotonic()
+        record = {"event": "grasp_check", "index": index, "state": VERIFY}
+        held = None
+        try:
+            reply = await asyncio.to_thread(self.vision.held_color,
+                                            observation["observation"]["images"])
+            answer = reply.get("held") if isinstance(reply, dict) else None
+            if answer not in (*self.config.colors, NOTHING, UNCLEAR):
+                raise ValueError("held must be a color, none or unclear")
+            held = None if answer == UNCLEAR else answer
+            record["held"] = answer
+            if isinstance(reply.get("scene"), str):
+                record["scene"] = reply["scene"][:300]
+        except Exception as error:
+            record.update(error_fields(error))
+        record["ms"] = elapsed_ms(started)
+        return held, record
+
     async def vase_counts(self, observation, index):
         """Blocking: the held client request waits. ({color: int} or None, log record)."""
         started = time.monotonic()
@@ -284,6 +325,8 @@ class FlowerRelay:
             reply = await asyncio.to_thread(self.vision.vase_counts,
                                             observation["observation"]["images"])
             counts = validate_counts(reply, self.config)
+            if isinstance(reply.get("scene"), str):
+                record["scene"] = reply["scene"][:300]
         except Exception as error:
             counts = None
             record.update(error_fields(error))
@@ -322,6 +365,13 @@ class FlowerRelay:
                         goal, index, position = client_goal, 0, None
                         self.log({"event": "session_start", "client_goal": goal})
                         machine = Machine(self.config, await self.make_plan(observation, goal))
+                    if machine.awaiting_verify:
+                        wanted = machine.action
+                        held, record = await self.held_color(observation, index)
+                        outcome = machine.on_held(held)
+                        self.log({**record, "wanted": wanted.color, "outcome": outcome,
+                                  "now_placing": machine.action.color if machine.action else None,
+                                  "queued": machine.queued})
                     if machine.awaiting_check:
                         action = machine.action
                         counts, record = await self.vase_counts(observation, index)
