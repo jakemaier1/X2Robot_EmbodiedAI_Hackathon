@@ -1,7 +1,6 @@
 """Offline tests for the flower harness. No robot, no real endpoints, no keys."""
 
 import asyncio
-from dataclasses import replace
 import json
 import subprocess
 import sys
@@ -17,13 +16,18 @@ from flower_harness import DEFAULT_TASK, FlowerRelay, load_task, parse_json_obje
 from flower_machine import DONE, Machine, TaskConfig
 
 GOAL = "Put the blue flowers in the bottle."
-CONFIG = load_task(DEFAULT_TASK)
-BOTTLE, FLOWER, INSERT, PLACE = (s.instruction for s in CONFIG.steps)
-HOME = CONFIG.done_instruction
-# GRAB_BOTTLE lasts 2 requests, every other step 1.
-TINY = replace(CONFIG, steps=tuple(replace(s, requests=2 if i == 0 else 1)
-                                   for i, s in enumerate(CONFIG.steps)))
-CYCLE = [BOTTLE, BOTTLE, FLOWER, INSERT, PLACE]
+CONFIG = load_task(DEFAULT_TASK)  # the real file; only checked to load, so tuning it never breaks tests
+# A fixed test task: the first step lasts 2 requests, every other step 1.
+TINY = TaskConfig.from_dict({
+    "steps": [{"state": state, "instruction": f"Do {state.lower()}.", "requests": 2 if i == 0 else 1}
+              for i, state in enumerate(["FIRST", "SECOND", "THIRD", "LAST"])],
+    "done_instruction": "Go home.",
+    "flowers_left_question": 'Any blue flowers left? {"blue_flowers_left": bool}',
+    "system_prompt": "Answer with one JSON object.",
+})
+A, B, C, D = (s.instruction for s in TINY.steps)
+HOME = TINY.done_instruction
+CYCLE = [A, A, B, C, D]
 
 
 class Script:
@@ -74,10 +78,8 @@ class MachineTests(unittest.TestCase):
                              check=True, cwd=str(DEFAULT_TASK.parent)).stdout.strip()
         self.assertEqual(out, "[]")
 
-    def test_config_is_data(self):
-        self.assertEqual([s.state for s in CONFIG.steps],
-                         ["GRAB_BOTTLE", "GRAB_FLOWER", "INSERT_STEM", "PLACE_BOTTLE"])
-        self.assertIn("blue flower by its stem", FLOWER)
+    def test_real_task_file_loads(self):
+        self.assertTrue(CONFIG.steps)
         self.assertIn('"blue_flowers_left"', CONFIG.flowers_left_question)
 
     def test_config_rejects_bad_values(self):
@@ -93,15 +95,14 @@ class MachineTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 TaskConfig.from_dict({**good, **bad})
 
-    def test_starts_with_the_bottle_and_cycles_until_no_flowers_left(self):
+    def test_starts_at_the_first_step_and_cycles_until_no_flowers_left(self):
         machine = Machine(TINY)
-        self.assertEqual(machine.state, "GRAB_BOTTLE")
+        self.assertEqual(machine.state, "FIRST")
         states = []
         for _ in range(5):
             machine.next_instruction()
             states.append(machine.state)  # `state` names the instruction just returned
-        self.assertEqual(states, ["GRAB_BOTTLE", "GRAB_BOTTLE", "GRAB_FLOWER",
-                                  "INSERT_STEM", "PLACE_BOTTLE"])
+        self.assertEqual(states, ["FIRST", "FIRST", "SECOND", "THIRD", "LAST"])
         self.assertTrue(machine.cycle_complete)
         with self.assertRaises(RuntimeError):
             machine.next_instruction()  # the check must come first
@@ -113,12 +114,10 @@ class MachineTests(unittest.TestCase):
         machine = Machine(TINY)
         self.assertEqual(drive(machine, [None, False], 11), CYCLE * 2 + [HOME])
 
-    def test_default_config_lengths(self):
-        per_flower = sum(s.requests for s in CONFIG.steps)
-        sent = drive(Machine(CONFIG), [False], per_flower + 1)
-        self.assertEqual(sent[:CONFIG.steps[0].requests], [BOTTLE] * CONFIG.steps[0].requests)
-        self.assertEqual(sent.count(FLOWER), CONFIG.steps[1].requests)
-        self.assertEqual(sent[-2:], [PLACE, HOME])
+    def test_real_task_runs_each_step_for_its_requests(self):
+        sent = drive(Machine(CONFIG), [False], sum(s.requests for s in CONFIG.steps) + 1)
+        expected = [s.instruction for s in CONFIG.steps for _ in range(s.requests)]
+        self.assertEqual(sent, expected + [CONFIG.done_instruction])
 
 
 # ---- relay: fake WALLX + fake client --------------------------------------------
@@ -159,14 +158,13 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
         ask = Script({"blue_flowers_left": True}, {"blue_flowers_left": False})
         sent, received, logs = await self.run_session([[GOAL] * 12], ask)
         self.assertEqual(sent, CYCLE * 2 + [HOME] * 2)
-        self.assertEqual(ask.questions, [CONFIG.flowers_left_question] * 2)
+        self.assertEqual(ask.questions, [TINY.flowers_left_question] * 2)
         for obs in received:
             self.assertEqual(obs["observation"], observation()["observation"])
             self.assertEqual(obs["control_context"], observation()["control_context"])
         states = [(r["state"], r["flowers_done"]) for r in logs if r["event"] == "state"]
-        self.assertEqual(states, [("GRAB_BOTTLE", 0), ("GRAB_FLOWER", 0), ("INSERT_STEM", 0),
-                                  ("PLACE_BOTTLE", 0), ("GRAB_BOTTLE", 1), ("GRAB_FLOWER", 1),
-                                  ("INSERT_STEM", 1), ("PLACE_BOTTLE", 1), (DONE, 2)])
+        self.assertEqual(states, [(name, n) for n in (0, 1) for name in ("FIRST", "SECOND", "THIRD", "LAST")]
+                         + [(DONE, 2)])
         for record in logs:
             self.assertNotIn("aW1hZ2U=", json.dumps(record))  # one JSON line, no images
 
@@ -182,7 +180,7 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_goal_or_connection_starts_a_fresh_machine(self):
         sent, _, logs = await self.run_session([[GOAL, GOAL, GOAL, "Another case."], [GOAL]], Script())
-        self.assertEqual(sent, [BOTTLE, BOTTLE, FLOWER, BOTTLE, BOTTLE])
+        self.assertEqual(sent, [A, A, B, A, A])
         self.assertEqual([r["client_goal"] for r in logs if r["event"] == "session_start"],
                          [GOAL, "Another case.", GOAL])
 
