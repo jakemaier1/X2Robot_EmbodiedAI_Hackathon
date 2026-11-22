@@ -1,9 +1,7 @@
 {
   "steps": [
-    {"state": "GRAB_BOTTLE",  "requests": 10, "instruction": "Grab the yellow and red bottle and hold it in place"},
-    {"state": "GRAB_FLOWER",  "requests": 10, "instruction": "While holding the bottle in place, grab a blue flower by its stem, right below the flower petals."},
-    {"state": "INSERT_STEM",  "requests": 10, "instruction": "While holding the bottle in place, insert the end of the flower stem into the top of the bottle."},
-    {"state": "PLACE_BOTTLE", "requests": 10, "instruction": "While holding the bottle in place, lower the flower stem into the bottle."}
+    {"state": "GRAB_BOTTLE",  "requests": 10, "instruction": "Grab the blue flower and hold it directly above the yellow bottle"},
+    {"state": "GRAB_FLOWER",  "requests": 10, "instruction": "Slowly lower the bottom of the blue flower stem into the bottle mouth."}
   ],
 
   "done_instruction": "Return both arms to the home position.",

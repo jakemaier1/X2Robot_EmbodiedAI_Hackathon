@@ -13,7 +13,7 @@ from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosedError
 
 from harness import pack, unpack
-from flower_harness import DEFAULT_TASK, FlowerRelay, load_task
+from flower_harness import DEFAULT_TASK, FlowerRelay, load_task, parse_json_object
 from flower_machine import DONE, Machine, TaskConfig
 
 GOAL = "Put the blue flowers in the bottle."
@@ -225,6 +225,17 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
                         await asyncio.wait_for(client.recv(), 2)
                     self.assertEqual(caught.exception.rcvd.code, 1011)
                 release.set()
+
+
+class VisionClientTests(unittest.TestCase):
+    def test_parse_tolerates_prose_and_fences(self):
+        self.assertEqual(parse_json_object('{"blue_flowers_left": true}'), {"blue_flowers_left": True})
+        self.assertEqual(parse_json_object('Sure!\n```json\n{"blue_flowers_left": false}\n```'),
+                         {"blue_flowers_left": False})
+        self.assertEqual(parse_json_object('I see {stuff}. {"a": {"b": 1}}'), {"a": {"b": 1}})
+        for bad in ("", "no json here", "[1, 2]", "{broken"):
+            with self.assertRaises(ValueError):
+                parse_json_object(bad)
 
 
 if __name__ == "__main__":

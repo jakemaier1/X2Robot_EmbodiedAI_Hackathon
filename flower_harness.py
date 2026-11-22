@@ -3,8 +3,7 @@
 
 The only lever is the `instruction` string forwarded to WALLX; metadata and
 action replies are forwarded byte-for-byte. Only WebUI can stop the robot.
-Protocol helpers come from the demo (harness.py); settings loading and
-embodiment validation are reused from orange_harness.py.
+Protocol helpers come from the demo (harness.py); everything else is here.
 
 Files
   flower_harness.py        relay (this file)
@@ -12,14 +11,14 @@ Files
   flower_task.json         flower count, states, instructions, step lengths
   test_flower_harness.py   offline tests
 
-Settings (local_settings.py, shared with orange_harness.py)
+Settings (local_settings.py next to this file; git-ignored, see the .example)
   WALLX_ENDPOINT, WALLX_HEADERS, AGENT_CHAT_URL, AGENT_MODEL, AGENT_API_KEY,
   AGENT_REASONING_EFFORT (see local_settings.example.py).
 
 Run
   python -m unittest -v test_flower_harness.py
   python flower_harness.py --host YOUR_LAN_IP --port 8001 [--task PATH] [--agent-timeout S]
-  For a passthrough connectivity check use: python orange_harness.py --passthrough
+  For a passthrough connectivity check use the demo: python harness.py --passthrough
 
 Decisions (MVP defaults; 1-2 are tunable in flower_task.json)
   1. Each state forwards its instruction for `requests` client requests
@@ -37,26 +36,152 @@ Decisions (MVP defaults; 1-2 are tunable in flower_task.json)
   6. A vision call times out after --agent-timeout=10 s (the demo's value).
 """
 
+"""
+    {"state": "GRAB_BOTTLE",  "requests": 10, "instruction": "Grab the yellow and red bottle and hold it in place"},
+    {"state": "GRAB_FLOWER",  "requests": 10, "instruction": "While holding the bottle in place, grab a blue flower by its stem, right below the flower petals."},
+    {"state": "INSERT_STEM",  "requests": 10, "instruction": "While holding the bottle in place, insert the end of the flower stem into the top of the bottle."},
+    {"state": "PLACE_BOTTLE", "requests": 10, "instruction": "While holding the bottle in place, lower the flower stem into the bottle."}
+"""
+
 import argparse
 import asyncio
+import base64
 import json
 from pathlib import Path
+import runpy
+import stat
 import time
 import urllib.error
+import urllib.request
 
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
 from harness import MAX_FRAME_BYTES, instruction_text, pack, unpack
-from orange_harness import VisionClient, _http_error_message, load_settings, log_json, validate_request
+from harness import validate_request as demo_validate_request
 from flower_machine import Machine, TaskConfig
 
 DEFAULT_TASK = Path(__file__).with_name("flower_task.json")
+SETTINGS_FILE = Path(__file__).with_name("local_settings.py")
+CAMERAS = ("front", "left_wrist", "right_wrist")
+EMBODIMENT = "teletwin_desktop/gripper-g"  # the only embodiment this station uses
+
+
+def validate_request(request):
+    """The demo's validation, restricted to EMBODIMENT (harness.py stays unchanged)."""
+    if not isinstance(request, dict) or request.get("embodiment") != EMBODIMENT:
+        raise ValueError("Unsupported embodiment")
+    # The demo validator only knows its own labels, so show it one it accepts.
+    demo_validate_request({**request, "embodiment": "quanta_x1_pro/gripper-g"})
+
+
+def load_settings(path=SETTINGS_FILE):
+    """Read the constants from local_settings.py; errors name the setting, never its value.
+
+    runpy (not import): no .pyc copy of the key lands in __pycache__, and no
+    same-named module elsewhere on sys.path can shadow it.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise SystemExit(f"Missing {path.name}: copy local_settings.example.py to {path.name} "
+                         "next to flower_harness.py and fill it in.")
+    if path.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        print(f"Warning: {path.name} is readable by other users; run: chmod 600 {path.name}",
+              flush=True)
+    values = runpy.run_path(str(path))
+    settings = {}
+    for name in ("WALLX_ENDPOINT", "AGENT_CHAT_URL", "AGENT_MODEL", "AGENT_API_KEY"):
+        value = values.get(name)
+        if not isinstance(value, str) or not value.strip() or value.startswith("PASTE_"):
+            raise SystemExit(f"Set {name} in {path.name}")
+        settings[name] = value.strip()
+    headers = values.get("WALLX_HEADERS", {})
+    if not isinstance(headers, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in headers.items()):
+        raise SystemExit(f"WALLX_HEADERS in {path.name} must be a dict of strings")
+    settings["WALLX_HEADERS"] = dict(headers)
+    effort = values.get("AGENT_REASONING_EFFORT")
+    if effort is not None and (not isinstance(effort, str) or not effort.strip()):
+        raise SystemExit(f"AGENT_REASONING_EFFORT in {path.name} must be a string or None")
+    settings["AGENT_REASONING_EFFORT"] = effort.strip() if effort else None
+    return settings
 
 
 def load_task(path):
     return TaskConfig.from_dict(json.loads(Path(path).read_text()))
+
+
+def log_json(record):
+    print(json.dumps(record, default=str), flush=True)
+
+
+# ---- vision LLM client -------------------------------------------------------
+
+def parse_json_object(text):
+    """Return the first JSON object in text, tolerating prose and code fences."""
+    decoder = json.JSONDecoder()
+    start = text.find("{")
+    while start != -1:
+        try:
+            value, _ = decoder.raw_decode(text, start)
+            if isinstance(value, dict):
+                return value
+        except ValueError:
+            pass
+        start = text.find("{", start + 1)
+    raise ValueError("No JSON object in agent reply")
+
+
+def http_error_message(error):
+    """The `error.message` field of an API error body (Gemini wraps it in a list), else ''."""
+    try:
+        body = json.loads(error.read(4096))
+        if isinstance(body, list) and body:
+            body = body[0]
+        return str(body["error"]["message"])[:200]
+    except Exception:
+        return ""
+
+
+class VisionClient:
+    """One Chat Completions call: three camera images + a question in, a JSON dict out."""
+
+    def __init__(self, url, model, key="", timeout=10, reasoning_effort=None):
+        self.url, self.model, self.key, self.timeout = url, model, key, timeout
+        self.reasoning_effort = reasoning_effort  # e.g. "minimal"; None = model default
+
+    def ask(self, images, question, system_prompt):
+        content = [{"type": "text", "text": question}]
+        for name in CAMERAS:
+            image = images.get(name)
+            if isinstance(image, bytes):
+                image = base64.b64encode(image).decode("ascii")
+            if not isinstance(image, str) or not image:
+                raise ValueError(f"Missing JPEG observation: {name}")
+            if not image.startswith("data:image/"):
+                image = "data:image/jpeg;base64," + image
+            content += [{"type": "text", "text": name},
+                        {"type": "image_url", "image_url": {"url": image}}]
+        body = {"model": self.model, "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": content},
+        ]}
+        if self.reasoning_effort:
+            body["reasoning_effort"] = self.reasoning_effort
+        headers = {"Content-Type": "application/json"}
+        if self.key:
+            headers["Authorization"] = "Bearer " + self.key
+        request = urllib.request.Request(self.url, json.dumps(body).encode(), headers=headers)
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            result = json.load(response)
+        content = result["choices"][0]["message"]["content"]
+        if isinstance(content, list):  # some endpoints return content parts
+            content = "".join(p.get("text", "") for p in content if isinstance(p, dict))
+        return parse_json_object(content)
+
+
+# ---- relay -------------------------------------------------------------------
 
 
 class FlowerRelay:
@@ -83,7 +208,7 @@ class FlowerRelay:
             # Never log keys, images or raw bodies; HTTP status and short message are safe.
             left, record["error"] = None, type(error).__name__
             if isinstance(error, urllib.error.HTTPError):
-                record.update(http_status=error.code, message=_http_error_message(error))
+                record.update(http_status=error.code, message=http_error_message(error))
         left = left if isinstance(left, bool) else None
         self.log({**record, "blue_flowers_left": left,
                   "ms": round((time.monotonic() - started) * 1000, 1)})
